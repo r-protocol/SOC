@@ -3,8 +3,8 @@ import feedparser
 import requests
 import random
 import socket
+import sys
 from bs4 import BeautifulSoup
-from tqdm import tqdm
 from config import RSS_FEEDS
 from logging_utils import log_info, log_success, log_warn, BColors
 
@@ -17,7 +17,38 @@ USER_AGENTS = [
 def fetch_and_scrape_articles_sequential(existing_urls, start_date, end_date):
     all_articles = []
     log_info(f"Searching for new articles from {len(RSS_FEEDS)} sources for the week of {start_date} to {end_date}...")
-    for feed_url in tqdm(RSS_FEEDS, desc="Fetching from feeds"):
+    total_feeds = len(RSS_FEEDS)
+    total_articles = 0
+    for feed_url in RSS_FEEDS:
+        try:
+            socket.setdefaulttimeout(20)
+            feed = feedparser.parse(feed_url)
+            socket.setdefaulttimeout(None)
+            total_articles += len(feed.entries)
+        except Exception:
+            continue
+    processed_articles = 0
+    progress_bar_width = 50
+    last_status_line = 0
+    def print_progress_bar(current, total, phase_desc, messages=None):
+        # First, clear the previous progress bar
+        sys.stdout.write('\r' + ' ' * 100 + '\r')  # Clear line
+        
+        # Print any new status messages
+        if messages:
+            for msg in messages:
+                print(msg)
+
+        # Print the progress bar at the bottom
+        percent = int((current / total) * 100) if total else 100
+        filled_length = int(progress_bar_width * percent // 100)
+        bar = '█' * filled_length + '-' * (progress_bar_width - filled_length)
+        sys.stdout.write(f"\r{phase_desc} |{bar}| {percent}% ({current}/{total})")
+        sys.stdout.flush()
+
+    print_progress_bar(0, total_articles, "Fetching Articles")
+    status_messages = []
+    for feed_url in RSS_FEEDS:
         try:
             socket.setdefaulttimeout(20)
             feed = feedparser.parse(feed_url)
@@ -33,7 +64,7 @@ def fetch_and_scrape_articles_sequential(existing_urls, start_date, end_date):
                     import datetime
                     published_date = datetime.date.today()
                 if start_date <= published_date <= end_date:
-                    print(f"\n{BColors.OKCYAN}[NEW]{BColors.ENDC} Fetched: {entry.title}")
+                    status_messages.append(f"{BColors.OKCYAN}[NEW]{BColors.ENDC} Fetched: {entry.title}")
                     article_data = {'title': entry.title, 'url': entry.link, 'published_date': published_date.isoformat(), 'content': ""}
                     if hasattr(entry, 'content') and entry.content:
                         article_data['content'] = BeautifulSoup(entry.content[0].value, 'html.parser').get_text(strip=True)
@@ -51,8 +82,14 @@ def fetch_and_scrape_articles_sequential(existing_urls, start_date, end_date):
                         except requests.RequestException:
                             article_data['content'] = None
                     all_articles.append(article_data)
+                    processed_articles += 1
+                    # Update progress with any new status messages
+                    print_progress_bar(processed_articles, total_articles, "Fetching Articles", status_messages)
+                    status_messages = []  # Clear after printing
         except (socket.timeout, Exception) as e:
             log_warn(f"Could not process feed {feed_url}: {e}")
             socket.setdefaulttimeout(None)
+    sys.stdout.write('\n')  # End progress bar line
+    sys.stdout.flush()
     log_success(f"Found a total of {len(all_articles)} new potential articles across all feeds.")
     return all_articles

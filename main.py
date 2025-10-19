@@ -9,12 +9,27 @@ from report import generate_weekly_report, get_last_full_week_dates
 from logging_utils import log_step, log_warn, log_info, log_success
 
 def main_pipeline():
+    # Parse the -n parameter if provided
+    article_limit = None
+    if "-n" in sys.argv:
+        try:
+            n_index = sys.argv.index("-n")
+            if n_index + 1 < len(sys.argv):
+                article_limit = int(sys.argv[n_index + 1])
+        except (ValueError, IndexError):
+            log_warn("Invalid -n parameter. Processing all articles.")
+
     initialize_database()
     existing_urls = get_existing_urls()
     start_date, end_date = get_last_full_week_dates()
     # Phase 1: Fetch and Scrape all new articles
     log_step(1, "Fetching and Scraping New Articles")
     new_articles = fetch_and_scrape_articles_sequential(existing_urls, start_date, end_date)
+    
+    # Apply article limit if specified
+    if article_limit and len(new_articles) > article_limit:
+        new_articles = new_articles[:article_limit]
+        log_info(f"Limited to {article_limit} articles as requested.")
     # Phase 2: Filter for relevant articles
     log_step(2, "Filtering New Articles for Cybersecurity Relevance")
     relevant_articles = filter_articles_sequential(new_articles)

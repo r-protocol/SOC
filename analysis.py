@@ -2,7 +2,7 @@
 import requests
 import json
 import re
-from tqdm import tqdm
+import sys
 from config import OLLAMA_MODEL, OLLAMA_HOST
 from logging_utils import BColors
 
@@ -69,10 +69,51 @@ Article Content: {article['content'][:8000]}
 
 def analyze_articles_sequential(articles):
     analyzed_articles = []
-    for article in tqdm(articles, desc="Analyzing articles"):
+    total_articles = len(articles)
+    processed_articles = 0
+    progress_bar_width = 50
+    last_line = ""
+    
+    def update_progress(current, total, phase_desc, messages=None):
+        nonlocal last_line
+        output = []
+        
+        # Add any new status messages
+        if messages:
+            output.extend(messages)
+            
+        # Create the progress bar
+        percent = int((current / total) * 100) if total else 100
+        filled_length = int(progress_bar_width * percent // 100)
+        bar = '█' * filled_length + '-' * (progress_bar_width - filled_length)
+        progress = f"{phase_desc} |{bar}| {percent}% ({current}/{total})"
+        
+        # Clear previous line if it exists
+        if last_line:
+            sys.stdout.write('\r' + ' ' * len(last_line) + '\r')
+            sys.stdout.flush()
+        
+        # Print all messages
+        if output:
+            print('\n'.join(output))
+            
+        # Print progress bar
+        sys.stdout.write('\r' + progress)
+        sys.stdout.flush()
+        last_line = progress
+
+    update_progress(0, total_articles, "Analyzing Articles")
+    status_messages = []
+    for article in articles:
         llm_analysis = analyze_article_with_llm(article)
         if llm_analysis:
             article.update(llm_analysis)
             analyzed_articles.append(article)
-            print(f"\n{BColors.OKGREEN}[ANALYZED]{BColors.ENDC} {article['title']} (Risk: {article.get('threat_risk')})")
+            status_messages.append(f"{BColors.OKGREEN}[ANALYZED]{BColors.ENDC} {article['title']} (Risk: {article.get('threat_risk')})")
+        processed_articles += 1
+        # Update progress with any new status messages
+        update_progress(processed_articles, total_articles, "Analyzing Articles", status_messages)
+        status_messages = []  # Clear after printing
+    sys.stdout.write('\n')  # End progress bar line
+    sys.stdout.flush()
     return analyzed_articles
