@@ -6,58 +6,136 @@ import sys
 from config import OLLAMA_MODEL, OLLAMA_HOST
 from logging_utils import BColors
 
-def repair_and_parse_json(raw_text):
+def repair_and_parse_json(raw_text, debug_title=None):
+    """Enhanced JSON repair with multiple strategies"""
+    
+    # Strategy 1: Find JSON boundaries
     json_start = raw_text.find('{')
     json_end = raw_text.rfind('}')
     if json_start == -1 or json_end == -1:
         return None
+    
     json_str = raw_text[json_start:json_end + 1]
-    json_str = re.sub(r'}\s*{', '},{', json_str)
-    json_str = re.sub(r',\s*([}\]])', r'\1', json_str)
+    
+    # Strategy 2: Remove markdown code blocks if present
+    json_str = re.sub(r'```json\s*', '', json_str)
+    json_str = re.sub(r'```\s*', '', json_str)
+    
+    # Strategy 3: Fix common JSON issues
+    json_str = re.sub(r'}\s*{', '},{', json_str)  # Multiple objects
+    json_str = re.sub(r',\s*([}\]])', r'\1', json_str)  # Trailing commas
+    
+    # Strategy 4: Handle newlines in strings
     repaired_str = ""
     in_string = False
-    for char in json_str:
-        if char == '"':
+    escape_next = False
+    for i, char in enumerate(json_str):
+        if escape_next:
+            repaired_str += char
+            escape_next = False
+            continue
+        
+        if char == '\\':
+            escape_next = True
+            repaired_str += char
+            continue
+            
+        if char == '"' and (i == 0 or json_str[i-1] != '\\'):
             in_string = not in_string
-        if in_string and char == '\n':
+            repaired_str += char
+        elif in_string and char == '\n':
             repaired_str += '\\n'
+        elif in_string and char == '\r':
+            continue  # Skip carriage returns
+        elif in_string and char == '\t':
+            repaired_str += '\\t'
         else:
             repaired_str += char
+    
     json_str = repaired_str
+    
+    # Strategy 5: Try to parse
     try:
-        return json.loads(json_str)
-    except json.JSONDecodeError:
+        parsed = json.loads(json_str)
+        # Validate structure
+        required_keys = ['summary', 'threat_risk', 'category', 'recommendations']
+        if all(key in parsed for key in required_keys):
+            return parsed
+        else:
+            if debug_title:
+                print(f"\n[DEBUG] Missing required keys for '{debug_title}'. Found: {list(parsed.keys())}")
+            return None
+    except json.JSONDecodeError as e:
+        if debug_title:
+            # Save failed JSON for debugging
+            try:
+                with open('failed_json_debug.txt', 'a', encoding='utf-8') as f:
+                    f.write(f"\n\n=== FAILED: {debug_title} ===\n")
+                    f.write(f"Error: {str(e)}\n")
+                    f.write(f"JSON attempt:\n{json_str[:500]}...\n")
+            except:
+                pass
         return None
 
 def analyze_article_with_llm(article, retry_callback=None):
-    prompt = f"""
-You are a senior cybersecurity threat intelligence analyst. Your final output MUST be a single, valid, raw JSON object. Do not use markdown like ```json or **. Do not add any conversational text. The entire response must start with {{ and end with }}.
+    prompt = f"""You are a cybersecurity threat intelligence analyst. You must respond ONLY with valid JSON. No markdown, no explanations, no extra text.
 
-Analyze the following article and provide a threat assessment based on these strict definitions:
-- **HIGH**: Active exploitation of a critical vulnerability, major data breach at a large company, or a widespread, severe malware campaign. Requires immediate action.
-- **MEDIUM**: A significant vulnerability has been disclosed but isn't yet widely exploited, a smaller-scale breach, or a notable new malware variant. Requires timely review.
-- **LOW**: A minor vulnerability, a theoretical attack vector, or a security advisory about a niche product. Should be monitored.
-- **INFORMATIONAL**: General cybersecurity news, trend reports, or expert opinions that do not represent a direct threat. For awareness only.
+CRITICAL RULES:
+1. Response must start with {{ and end with }}
+2. All strings must use double quotes "
+3. Escape special characters in strings (quotes, newlines, etc.)
+4. No trailing commas
+5. Use \\n\\n for paragraph breaks in the summary field
 
-1.  **summary**: A detailed, professional summary as a single JSON string, in a natural, narrative style (2-3 paragraphs, using "\\n\\n" for breaks). Explain what happened, why it's important, and the business impact.
-2.  **threat_risk**: Must be one of: "HIGH", "MEDIUM", "LOW", "INFORMATIONAL".
-3.  **category**: Must be one of: "Ransomware", "Phishing", "Vulnerability", "Malware", "Breach", "General Security".
-4.  **recommendations**: A list of 5 actionable recommendations. Each must be a JSON object with two keys: a short "title" and a detailed "description".
+Required JSON structure:
+{{
+  "summary": "Professional summary here. Use \\n\\n for paragraph breaks. 2-3 paragraphs about the threat, its impact, and business implications.",
+  "threat_risk": "HIGH or MEDIUM or LOW or INFORMATIONAL",
+  "category": "Ransomware or Phishing or Vulnerability or Malware or Breach or General Security",
+  "recommendations": [
+    {{"title": "Short action title", "description": "Detailed description"}},
+    {{"title": "Short action title", "description": "Detailed description"}},
+    {{"title": "Short action title", "description": "Detailed description"}},
+    {{"title": "Short action title", "description": "Detailed description"}},
+    {{"title": "Short action title", "description": "Detailed description"}}
+  ]
+}}
 
-Article Title: {article['title']}
-Article Content: {article['content'][:8000]}
-"""
+THREAT RISK DEFINITIONS:
+- HIGH: Active exploitation, critical vulnerability, major breach, widespread malware. Immediate action required.
+- MEDIUM: Disclosed vulnerability (not widely exploited), smaller breach, new malware variant. Timely review needed.
+- LOW: Minor vulnerability, theoretical attack, niche product advisory. Monitor only.
+- INFORMATIONAL: General news, trends, opinions. No direct threat. Awareness only.
+
+ARTICLE TO ANALYZE:
+Title: {article['title']}
+Content: {article['content'][:8000]}
+
+RESPOND WITH JSON ONLY:"""
+
     max_retries = 2
     for attempt in range(max_retries + 1):
         try:
+            # Use lower temperature for more consistent output
             response = requests.post(
                 f"{OLLAMA_HOST}/api/generate",
-                json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False},
+                json={
+                    "model": OLLAMA_MODEL, 
+                    "prompt": prompt, 
+                    "stream": False,
+                    "options": {
+                        "temperature": 0.3,  # Lower = more consistent
+                        "top_p": 0.9
+                    }
+                },
                 timeout=300
             )
             response.raise_for_status()
             response_text = response.json()['response'].strip()
-            parsed_json = repair_and_parse_json(response_text)
+            
+            # Try to parse with debug info
+            parsed_json = repair_and_parse_json(response_text, debug_title=article['title'])
+            
             if parsed_json:
                 return parsed_json, None
             elif attempt < max_retries:
@@ -66,13 +144,17 @@ Article Content: {article['content'][:8000]}
                     retry_callback(retry_msg)
                 else:
                     print(f"\n{retry_msg}")
-        except requests.RequestException:
+        except requests.RequestException as e:
             if attempt < max_retries:
                 retry_msg = f"{BColors.WARNING}[RETRYING]{BColors.ENDC} Network error for '{article['title']}' (Attempt {attempt + 2})"
                 if retry_callback:
                     retry_callback(retry_msg)
                 else:
                     print(f"\n{retry_msg}")
+    
+    # All retries failed
+    if retry_callback:
+        retry_callback(f"{BColors.FAIL}[FAILED]{BColors.ENDC} Could not analyze '{article['title']}' after {max_retries + 1} attempts")
     return None, None
 
 def analyze_articles_sequential(articles):
