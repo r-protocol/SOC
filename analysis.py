@@ -29,7 +29,7 @@ def repair_and_parse_json(raw_text):
     except json.JSONDecodeError:
         return None
 
-def analyze_article_with_llm(article):
+def analyze_article_with_llm(article, retry_callback=None):
     prompt = f"""
 You are a senior cybersecurity threat intelligence analyst. Your final output MUST be a single, valid, raw JSON object. Do not use markdown like ```json or **. Do not add any conversational text. The entire response must start with {{ and end with }}.
 
@@ -59,13 +59,21 @@ Article Content: {article['content'][:8000]}
             response_text = response.json()['response'].strip()
             parsed_json = repair_and_parse_json(response_text)
             if parsed_json:
-                return parsed_json
+                return parsed_json, None
             elif attempt < max_retries:
-                print(f"\n{BColors.WARNING}[RETRYING]{BColors.ENDC} Invalid JSON for '{article['title']}' (Attempt {attempt + 2})")
+                retry_msg = f"{BColors.WARNING}[RETRYING]{BColors.ENDC} Invalid JSON for '{article['title']}' (Attempt {attempt + 2})"
+                if retry_callback:
+                    retry_callback(retry_msg)
+                else:
+                    print(f"\n{retry_msg}")
         except requests.RequestException:
             if attempt < max_retries:
-                print(f"\n{BColors.WARNING}[RETRYING]{BColors.ENDC} Network error for '{article['title']}' (Attempt {attempt + 2})")
-    return None
+                retry_msg = f"{BColors.WARNING}[RETRYING]{BColors.ENDC} Network error for '{article['title']}' (Attempt {attempt + 2})"
+                if retry_callback:
+                    retry_callback(retry_msg)
+                else:
+                    print(f"\n{retry_msg}")
+    return None, None
 
 def analyze_articles_sequential(articles):
     analyzed_articles = []
@@ -73,47 +81,53 @@ def analyze_articles_sequential(articles):
     processed_articles = 0
     progress_bar_width = 50
     last_line = ""
+    status_messages = []
     
-    def update_progress(current, total, phase_desc, messages=None):
+    def update_progress(current, total, phase_desc):
         nonlocal last_line
-        output = []
         
-        # Add any new status messages
-        if messages:
-            output.extend(messages)
-            
         # Create the progress bar
         percent = int((current / total) * 100) if total else 100
         filled_length = int(progress_bar_width * percent // 100)
         bar = '█' * filled_length + '-' * (progress_bar_width - filled_length)
         progress = f"{phase_desc} |{bar}| {percent}% ({current}/{total})"
         
-        # Clear previous line if it exists
+        # Clear previous progress bar line
         if last_line:
             sys.stdout.write('\r' + ' ' * len(last_line) + '\r')
             sys.stdout.flush()
         
-        # Print all messages
-        if output:
-            print('\n'.join(output))
-            
         # Print progress bar
-        sys.stdout.write('\r' + progress)
+        sys.stdout.write(progress)
         sys.stdout.flush()
         last_line = progress
+    
+    def handle_message(msg):
+        """Callback to handle retry/status messages"""
+        nonlocal last_line
+        # Clear current progress bar
+        if last_line:
+            sys.stdout.write('\r' + ' ' * len(last_line) + '\r')
+            sys.stdout.flush()
+        # Print the message
+        print(msg)
+        # Redraw the progress bar
+        update_progress(processed_articles, total_articles, "Analyzing Articles")
 
     update_progress(0, total_articles, "Analyzing Articles")
-    status_messages = []
+    
     for article in articles:
-        llm_analysis = analyze_article_with_llm(article)
+        llm_analysis, _ = analyze_article_with_llm(article, retry_callback=handle_message)
         if llm_analysis:
             article.update(llm_analysis)
             analyzed_articles.append(article)
-            status_messages.append(f"{BColors.OKGREEN}[ANALYZED]{BColors.ENDC} {article['title']} (Risk: {article.get('threat_risk')})")
+            # Print success message
+            success_msg = f"{BColors.OKGREEN}[ANALYZED]{BColors.ENDC} {article['title']} (Risk: {article.get('threat_risk')})"
+            handle_message(success_msg)
+        
         processed_articles += 1
-        # Update progress with any new status messages
-        update_progress(processed_articles, total_articles, "Analyzing Articles", status_messages)
-        status_messages = []  # Clear after printing
+        update_progress(processed_articles, total_articles, "Analyzing Articles")
+    
     sys.stdout.write('\n')  # End progress bar line
     sys.stdout.flush()
     return analyzed_articles
