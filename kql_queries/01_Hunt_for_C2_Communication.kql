@@ -1,0 +1,5 @@
+// Hunt for C2 Communication
+DeviceNetworkEvents
+| where Timestamp > ago(30d)
+| where RemoteIP in (get_iocs('C2_IPs'))
+| project Timestamp, DeviceName, RemoteIP

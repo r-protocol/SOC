@@ -20,14 +20,18 @@ class IOCExtractor:
     # Regex patterns for different IOC types
     PATTERNS = {
         'ipv4': r'\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b',
+        'ipv4_defanged': r'\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\[\.\]){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b',
         'ipv6': r'\b(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\b',
         'domain': r'\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}\b',
+        'domain_defanged': r'\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\[\.\])+[a-zA-Z]{2,}\b',
         'md5': r'\b[a-fA-F0-9]{32}\b',
         'sha1': r'\b[a-fA-F0-9]{40}\b',
         'sha256': r'\b[a-fA-F0-9]{64}\b',
         'cve': r'CVE-\d{4}-\d{4,7}',
         'email': r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
+        'email_defanged': r'\b[A-Za-z0-9._%+-]+\[@\][A-Za-z0-9.-]+\[\.\][A-Z|a-z]{2,}\b',
         'url': r'https?://[^\s<>"{}|\\^`\[\]]+',
+        'url_defanged': r'hxxps?://[^\s<>"{}|\\^`]+',
     }
     
     # Common false positives to exclude
@@ -52,8 +56,19 @@ class IOCExtractor:
             for name, pattern in self.PATTERNS.items()
         }
     
+    @staticmethod
+    def defang_to_normal(ioc: str) -> str:
+        """Convert defanged IOC to normal format"""
+        # Replace [.] with .
+        ioc = ioc.replace('[.]', '.')
+        # Replace [@] with @
+        ioc = ioc.replace('[@]', '@')
+        # Replace hxxp with http
+        ioc = ioc.replace('hxxp://', 'http://').replace('hxxps://', 'https://')
+        return ioc
+    
     def extract_all(self, text: str) -> Dict[str, List[Dict]]:
-        """Extract all IOCs from text with context"""
+        """Extract all IOCs from text with context (handles defanged notation)"""
         iocs = {
             'ips': [],
             'domains': [],
@@ -63,7 +78,7 @@ class IOCExtractor:
             'urls': []
         }
         
-        # Extract IPs (both IPv4 and IPv6)
+        # Extract IPs (both normal and defanged IPv4)
         for match in self.compiled_patterns['ipv4'].finditer(text):
             ip = match.group()
             if self._validate_ip(ip):
@@ -73,12 +88,35 @@ class IOCExtractor:
                     'context': self._get_context(text, match.start(), match.end())
                 })
         
-        # Extract domains
+        # Extract defanged IPs
+        for match in self.compiled_patterns['ipv4_defanged'].finditer(text):
+            ip_defanged = match.group()
+            ip = self.defang_to_normal(ip_defanged)
+            if self._validate_ip(ip):
+                iocs['ips'].append({
+                    'value': ip,
+                    'type': 'ipv4',
+                    'defanged': True,
+                    'context': self._get_context(text, match.start(), match.end())
+                })
+        
+        # Extract domains (normal)
         for match in self.compiled_patterns['domain'].finditer(text):
             domain = match.group()
             if self._validate_domain(domain):
                 iocs['domains'].append({
                     'value': domain,
+                    'context': self._get_context(text, match.start(), match.end())
+                })
+        
+        # Extract defanged domains
+        for match in self.compiled_patterns['domain_defanged'].finditer(text):
+            domain_defanged = match.group()
+            domain = self.defang_to_normal(domain_defanged)
+            if self._validate_domain(domain):
+                iocs['domains'].append({
+                    'value': domain,
+                    'defanged': True,
                     'context': self._get_context(text, match.start(), match.end())
                 })
         

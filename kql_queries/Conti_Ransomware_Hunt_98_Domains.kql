@@ -1,0 +1,106 @@
+// Hunt for Conti Ransomware C2 Domains
+// Source: CISA Advisory - Conti Ransomware Alert
+// Article: https://www.bleepingcomputer.com/news/security/cisa-updates-conti-ransomware-alert-with-nearly-100-domain-names/
+// Risk: HIGH
+// Total IOCs: 98 domains
+
+// Query 1: Network Connections to Conti Domains (Microsoft Defender)
+DeviceNetworkEvents
+| where Timestamp > ago(30d)
+| where RemoteUrl has_any (
+    "badiwaw.com", "balacif.com", "barovur.com", "basisem.com", "bimafu.com",
+    "bujoke.com", "buloxo.com", "bumoyez.com", "bupula.com", "cajeti.com",
+    "cilomum.com", "codasal.com", "comecal.com", "dawasab.com", "derotin.com",
+    "dihata.com", "dirupun.com", "dohigu.com", "dubacaj.com", "fecotis.com",
+    "fipoleb.com", "fofudir.com", "fulujam.com", "ganobaz.com", "gerepa.com",
+    "gucunug.com", "guvafe.com", "hakakor.com", "hejalij.com", "hepide.com",
+    "hesovaw.com", "hewecas.com", "hidusi.com", "hireja.com", "hoguyum.com",
+    "jecubat.com", "jegufe.com", "joxinu.com", "kelowuh.com", "kidukes.com",
+    "kipitep.com", "kirute.com", "kogasiv.com", "kozoheh.com", "kuxizi.com",
+    "kuyeguh.com", "lipozi.com", "lujecuk.com", "masaxoc.com", "mebonux.com",
+    "mihojip.com", "modasum.com", "moduwoj.com", "movufa.com", "nagahox.com",
+    "nawusem.com", "nerapo.com", "newiro.com", "paxobuy.com", "pazovet.com",
+    "pihafi.com", "pilagop.com", "pipipub.com", "pofifa.com", "radezig.com",
+    "raferif.com", "ragojel.com", "rexagi.com", "rimurik.com", "rinutov.com",
+    "rusoti.com", "sazoya.com", "sidevot.com", "solobiv.com", "sufebul.com",
+    "suhuhow.com", "sujaxa.com", "tafobi.com", "tepiwo.com", "tifiru.com",
+    "tiyuzub.com", "tubaho.com", "vafici.com", "vegubu.com", "vigave.com",
+    "vipeced.com", "vizosi.com", "vojefe.com", "vonavu.com", "wezeriw.com",
+    "wideri.com", "wudepen.com", "wuluxo.com", "wuvehus.com", "wuvici.com",
+    "wuvidi.com", "xegogiv.com", "xekezix.com"
+)
+| project Timestamp, DeviceName, DeviceId, RemoteUrl, RemoteIP, RemotePort,
+          InitiatingProcessFileName, InitiatingProcessCommandLine,
+          LocalIP, LocalPort
+| summarize 
+    FirstSeen = min(Timestamp),
+    LastSeen = max(Timestamp),
+    ConnectionCount = count(),
+    UniqueProcesses = dcount(InitiatingProcessFileName)
+    by DeviceName, RemoteUrl
+| order by ConnectionCount desc
+
+
+// Query 2: DNS Lookups for Conti Domains (Microsoft Sentinel)
+DnsEvents
+| where TimeGenerated > ago(30d)
+| where Name has_any (
+    "badiwaw.com", "balacif.com", "barovur.com", "basisem.com", "bimafu.com",
+    "bujoke.com", "buloxo.com", "bumoyez.com", "bupula.com", "cajeti.com",
+    "cilomum.com", "codasal.com", "comecal.com", "dawasab.com", "derotin.com",
+    "dihata.com", "dirupun.com", "dohigu.com", "dubacaj.com", "fecotis.com",
+    "fipoleb.com", "fofudir.com", "fulujam.com", "ganobaz.com", "gerepa.com",
+    "gucunug.com", "guvafe.com", "hakakor.com", "hejalij.com", "hepide.com",
+    "hesovaw.com", "hewecas.com", "hidusi.com", "hireja.com", "hoguyum.com",
+    "jecubat.com", "jegufe.com", "joxinu.com", "kelowuh.com", "kidukes.com",
+    "kipitep.com", "kirute.com", "kogasiv.com", "kozoheh.com", "kuxizi.com",
+    "kuyeguh.com", "lipozi.com", "lujecuk.com", "masaxoc.com", "mebonux.com",
+    "mihojip.com", "modasum.com", "moduwoj.com", "movufa.com", "nagahox.com",
+    "nawusem.com", "nerapo.com", "newiro.com", "paxobuy.com", "pazovet.com",
+    "pihafi.com", "pilagop.com", "pipipub.com", "pofifa.com", "radezig.com",
+    "raferif.com", "ragojel.com", "rexagi.com", "rimurik.com", "rinutov.com",
+    "rusoti.com", "sazoya.com", "sidevot.com", "solobiv.com", "sufebul.com",
+    "suhuhow.com", "sujaxa.com", "tafobi.com", "tepiwo.com", "tifiru.com",
+    "tiyuzub.com", "tubaho.com", "vafici.com", "vegubu.com", "vigave.com",
+    "vipeced.com", "vizosi.com", "vojefe.com", "vonavu.com", "wezeriw.com",
+    "wideri.com", "wudepen.com", "wuluxo.com", "wuvehus.com", "wuvici.com",
+    "wuvidi.com", "xegogiv.com", "xekezix.com"
+)
+| project TimeGenerated, Computer, Name, IPAddresses, Type
+| summarize 
+    FirstQuery = min(TimeGenerated),
+    LastQuery = max(TimeGenerated),
+    QueryCount = count()
+    by Computer, Name
+| order by QueryCount desc
+
+
+// Query 3: Firewall Logs for Conti Domains (CommonSecurityLog)
+CommonSecurityLog
+| where TimeGenerated > ago(30d)
+| where DeviceVendor == "Palo Alto Networks" or DeviceVendor == "Fortinet"
+| where DestinationHostName has_any (
+    "badiwaw.com", "balacif.com", "barovur.com", "basisem.com", "bimafu.com",
+    "bujoke.com", "buloxo.com", "bumoyez.com", "bupula.com", "cajeti.com",
+    "cilomum.com", "codasal.com", "comecal.com", "dawasab.com", "derotin.com",
+    "dihata.com", "dirupun.com", "dohigu.com", "dubacaj.com", "fecotis.com",
+    "fipoleb.com", "fofudir.com", "fulujam.com", "ganobaz.com", "gerepa.com",
+    "gucunug.com", "guvafe.com", "hakakor.com", "hejalij.com", "hepide.com",
+    "hesovaw.com", "hewecas.com", "hidusi.com", "hireja.com", "hoguyum.com",
+    "jecubat.com", "jegufe.com", "joxinu.com", "kelowuh.com", "kidukes.com",
+    "kipitep.com", "kirute.com", "kogasiv.com", "kozoheh.com", "kuxizi.com",
+    "kuyeguh.com", "lipozi.com", "lujecuk.com", "masaxoc.com", "mebonux.com",
+    "mihojip.com", "modasum.com", "moduwoj.com", "movufa.com", "nagahox.com",
+    "nawusem.com", "nerapo.com", "newiro.com", "paxobuy.com", "pazovet.com",
+    "pihafi.com", "pilagop.com", "pipipub.com", "pofifa.com", "radezig.com",
+    "raferif.com", "ragojel.com", "rexagi.com", "rimurik.com", "rinutov.com",
+    "rusoti.com", "sazoya.com", "sidevot.com", "solobiv.com", "sufebul.com",
+    "suhuhow.com", "sujaxa.com", "tafobi.com", "tepiwo.com", "tifiru.com",
+    "tiyuzub.com", "tubaho.com", "vafici.com", "vegubu.com", "vigave.com",
+    "vipeced.com", "vizosi.com", "vojefe.com", "vonavu.com", "wezeriw.com",
+    "wideri.com", "wudepen.com", "wuluxo.com", "wuvehus.com", "wuvici.com",
+    "wuvidi.com", "xegogiv.com", "xekezix.com"
+)
+| project TimeGenerated, SourceIP, DestinationHostName, DestinationIP, 
+          DeviceAction, ApplicationProtocol, SentBytes, ReceivedBytes
+| order by TimeGenerated desc
