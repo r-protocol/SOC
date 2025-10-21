@@ -1,5 +1,0 @@
-// Hunt for Lateral Movement
-DeviceFileEvents
-| where Timestamp > ago(30d)
-| where FileHash in (get_iocs('Lateral_Movement_Hashes'))
-| project Timestamp, DeviceName, FileName

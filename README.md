@@ -269,6 +269,50 @@ Export .kql Files
 - Set `ENABLE_KQL_GENERATION = False` in config.py to disable
 - Check database has IOCs table: Run `test_kql_integration.py`
 
-## Version History
+## 📂 Project Structure
 
-See `CHANGELOG.md` for version history and updates.
+```
+ThreatIntelligence/PY/
+├── analysis.py              # LLM-based article analysis
+├── config.py                # Configuration settings
+├── db_utils.py              # Database operations
+├── fetcher.py               # RSS feed fetching and scraping
+├── filtering.py             # Article relevance filtering
+├── kql_generator.py         # Regex-based IOC extraction
+├── kql_generator_llm.py     # LLM-based IOC extraction & KQL generation
+├── logging_utils.py         # Colored logging utilities
+├── main.py                  # Main pipeline orchestration
+├── report.py                # Word report generation
+├── requirements.txt         # Python dependencies
+├── template.docx            # Report template
+├── threat_intel.db          # SQLite database
+├── README.md                # This file
+│
+├── docs/                    # 📚 Documentation
+│   ├── README.md           # Documentation index
+│   ├── CHANGELOG.md        # Version history
+│   ├── LLM_KQL_IMPLEMENTATION.md
+│   ├── KQL_LLM_VS_REGEX.md
+│   ├── SINGLE_ARTICLE_MODE.md
+│   └── ... more docs
+│
+├── tests/                   # 🧪 Test scripts
+│   ├── README.md           # Test documentation
+│   ├── test_ioc_extraction.py
+│   └── test_kql_integration.py
+│
+└── kql_queries/            # 📊 Generated KQL queries
+    └── *.kql
+```
+
+## 📚 Documentation
+
+- **[Documentation Index](docs/README.md)** - All project documentation
+- **[Changelog](docs/CHANGELOG.md)** - Version history and updates
+- **[Single Article Mode](docs/SINGLE_ARTICLE_MODE.md)** - Process single articles for testing
+- **[LLM vs Regex Comparison](docs/KQL_LLM_VS_REGEX.md)** - Detailed comparison
+
+## 🧪 Testing
+
+- **[Test Scripts](tests/README.md)** - Test documentation and scripts
+- **[Conti Test Results](docs/CONTI_TEST_SUCCESS.md)** - Real-world test with 98 IOCs extracted
