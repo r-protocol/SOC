@@ -72,8 +72,9 @@ Respond with JSON only:"""
                     "prompt": prompt,
                     "stream": False,
                     "options": {
-                        "temperature": 0.2,  # Low for structured output
-                        "top_p": 0.9
+                        "temperature": 0.1,  # Very low for better JSON structure
+                        "top_p": 0.9,
+                        "num_predict": 16384  # Allow very long responses for many IOCs (98 domains)
                     }
                 },
                 timeout=120
@@ -163,37 +164,63 @@ Respond with JSON only:"""
             log_warn(f"No high-confidence IOCs for '{article['title']}', using templates")
             return self.template_generator.generate_queries(article)
         
-        prompt = f"""You are a threat hunting expert. Generate KQL queries for Microsoft Defender/Sentinel to hunt for these threats.
+        # Determine primary IOC type
+        ioc_counts = {k: len(v) for k, v in high_conf_iocs.items() if v}
+        primary_type = max(ioc_counts, key=ioc_counts.get) if ioc_counts else 'domains'
+        ioc_count = ioc_counts.get(primary_type, 0)
+        
+        # Limit IOCs in prompt to avoid huge prompts
+        limited_iocs = {}
+        for ioc_type, ioc_list in high_conf_iocs.items():
+            if len(ioc_list) > 10:
+                limited_iocs[ioc_type] = ioc_list[:10] + [{'value': f'... and {len(ioc_list)-10} more {ioc_type}'}]
+            else:
+                limited_iocs[ioc_type] = ioc_list
+        
+        prompt = f"""You are a threat hunting expert. Generate ONE focused, comprehensive KQL query for Microsoft Defender/Sentinel.
 
 Article: {article['title']}
 Risk: {article.get('threat_risk', 'UNKNOWN')}
 Category: {article.get('category', 'Unknown')}
 
-Extracted IOCs:
-{json.dumps(high_conf_iocs, indent=2)}
+Primary IOC Type: {primary_type.upper()} ({ioc_count} total)
+Sample IOCs:
+{json.dumps(limited_iocs, indent=2)}
 
-Generate 2-4 KQL queries. For each query, provide:
-1. **name**: Descriptive query name
-2. **type**: "IOC_Hunt" or "Behavior_Hunt" or "Vulnerability_Hunt"
-3. **description**: What the query detects
-4. **kql**: The actual KQL query (use appropriate tables: DeviceNetworkEvents, DeviceFileEvents, DeviceProcessEvents, CommonSecurityLog, etc.)
+TASK: Generate ONE comprehensive query that focuses on the primary IOC type ({primary_type}).
+
+For DOMAINS: Hunt for network connections, DNS queries, and firewall logs
+For IPS: Hunt for network connections and firewall blocks
+For HASHES: Hunt for file creations and process executions
+For CVES: Hunt for vulnerable software and exploitation attempts
+
+Provide:
+1. **name**: Specific, descriptive query name related to the article
+2. **type**: "IOC_Hunt"
+3. **description**: What the query detects (be specific)
+4. **kql**: ONE comprehensive query that:
+   - Uses appropriate tables (DeviceNetworkEvents, DnsEvents, CommonSecurityLog, etc.)
+   - Includes ALL IOC values using has_any() for lists
+   - Has time filter ago(30d)
+   - Aggregates results (summarize by device)
+   - Projects relevant fields
+   - Has clear comments
 
 IMPORTANT:
-- Use correct KQL syntax
-- Include time filters (ago(30d))
-- Use proper operators (in, has_any, contains)
-- Include relevant project fields
-- Add comments in queries
+- Generate ONLY ONE query (the most effective one)
+- Include ALL {ioc_count} IOCs in the query (use has_any or in operators)
+- Use proper KQL syntax
+- Add helpful comments
 
 Output JSON only:
 {{
   "queries": [
     {{
-      "name": "Hunt for C2 Communication",
+      "name": "Hunt for Conti Ransomware Domain Connections",
       "type": "IOC_Hunt",
-      "description": "Detect network connections to attacker infrastructure",
+      "description": "Detect network connections to Conti ransomware C2 domains",
       "platform": "Microsoft Defender",
-      "kql": "DeviceNetworkEvents\\n| where Timestamp > ago(30d)\\n| where RemoteIP in ('1.2.3.4')\\n| project Timestamp, DeviceName, RemoteIP"
+      "kql": "// Hunt for connections to Conti domains\\nDeviceNetworkEvents\\n| where Timestamp > ago(30d)\\n| where RemoteUrl has_any ('domain1.com', 'domain2.com')\\n| summarize FirstSeen=min(Timestamp), LastSeen=max(Timestamp), Count=count() by DeviceName, RemoteUrl"
     }}
   ]
 }}
@@ -208,8 +235,9 @@ Respond with JSON only:"""
                     "prompt": prompt,
                     "stream": False,
                     "options": {
-                        "temperature": 0.3,
-                        "top_p": 0.9
+                        "temperature": 0.1,  # Very low for structured JSON output
+                        "top_p": 0.9,
+                        "num_predict": 4096
                     }
                 },
                 timeout=120
@@ -221,7 +249,9 @@ Respond with JSON only:"""
             queries = self._parse_query_response(response_text, article)
             
             if queries:
-                log_success(f"LLM generated {len(queries)} queries for '{article['title']}'")
+                # Inject actual IOCs into the query
+                queries = self._inject_iocs_into_queries(queries, high_conf_iocs)
+                log_success(f"LLM generated {len(queries)} focused query for '{article['title']}'")
                 return queries
             else:
                 log_warn(f"LLM query generation failed, using templates for '{article['title']}'")
@@ -230,6 +260,51 @@ Respond with JSON only:"""
         except Exception as e:
             log_error(f"LLM query generation failed: {e}, using templates")
             return self.template_generator.generate_queries(article)
+    
+    def _inject_iocs_into_queries(self, queries: List[Dict], iocs: Dict) -> List[Dict]:
+        """Inject actual IOC values into the generated queries"""
+        for query in queries:
+            if 'query' not in query:
+                continue
+            
+            kql = query['query']
+            
+            # Determine primary IOC type from the query
+            if 'domains' in iocs and len(iocs['domains']) > 0:
+                # Build domain list for has_any
+                domain_values = [ioc['value'] for ioc in iocs['domains'] if isinstance(ioc, dict)]
+                if domain_values:
+                    # Format as KQL list
+                    domains_str = ', '.join([f'"{d}"' for d in domain_values])
+                    # Replace placeholder or inject into where clause
+                    if 'has_any' in kql or 'RemoteUrl' in kql:
+                        # Find and replace the has_any list
+                        import re
+                        kql = re.sub(r"has_any\s*\([^)]+\)", f"has_any ({domains_str})", kql)
+                    query['query'] = kql
+                    query['ioc_count'] = len(domain_values)
+            
+            elif 'ips' in iocs and len(iocs['ips']) > 0:
+                # Build IP list
+                ip_values = [ioc['value'] for ioc in iocs['ips'] if isinstance(ioc, dict)]
+                if ip_values:
+                    ips_str = ', '.join([f'"{ip}"' for ip in ip_values])
+                    import re
+                    kql = re.sub(r"in\s*\([^)]+\)", f"in ({ips_str})", kql)
+                    query['query'] = kql
+                    query['ioc_count'] = len(ip_values)
+            
+            elif 'hashes' in iocs and len(iocs['hashes']) > 0:
+                # Build hash list
+                hash_values = [ioc['value'] for ioc in iocs['hashes'] if isinstance(ioc, dict)]
+                if hash_values:
+                    hashes_str = ', '.join([f'"{h}"' for h in hash_values])
+                    import re
+                    kql = re.sub(r"in\s*\([^)]+\)", f"in ({hashes_str})", kql)
+                    query['query'] = kql
+                    query['ioc_count'] = len(hash_values)
+        
+        return queries
     
     def _filter_high_confidence(self, iocs: Dict) -> Dict:
         """Filter IOCs by confidence level"""

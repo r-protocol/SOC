@@ -9,7 +9,7 @@ RSS_FEEDS = [
     "https://krebsonsecurity.com/feed/"
 ]
 DATABASE_PATH = "threat_intel.db"
-OLLAMA_MODEL = "llama3"
+OLLAMA_MODEL = "deepseek-coder-v2:16b"  # Specialized coding model - better for IOC extraction & KQL
 OLLAMA_HOST = "http://localhost:11434"
 TEMPLATE_DOCX_PATH = "template.docx"
 OUTPUT_DOCX_PATH = f"Threat_Intelligence_Report_{datetime.date.today()}.docx"
