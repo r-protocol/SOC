@@ -4,15 +4,80 @@ import requests
 import random
 import socket
 import sys
+import datetime
 from bs4 import BeautifulSoup
 from config import RSS_FEEDS
-from logging_utils import log_info, log_success, log_warn, BColors
+from logging_utils import log_info, log_success, log_warn, log_error, BColors
 
 USER_AGENTS = [
     'Mozilla/50.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36',
     'Mozilla/50.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36',
     'Mozilla/50.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Firefox/109.0 Safari/537.36',
 ]
+
+def fetch_single_article(url):
+    """Fetch and scrape a single article from a URL"""
+    log_info(f"Fetching article from: {url}")
+    
+    try:
+        headers = {'User-Agent': random.choice(USER_AGENTS)}
+        response = requests.get(url, headers=headers, timeout=30)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.content, 'html.parser')
+        
+        # Try to extract title
+        title = None
+        if soup.find('h1'):
+            title = soup.find('h1').get_text(strip=True)
+        elif soup.find('title'):
+            title = soup.find('title').get_text(strip=True)
+        else:
+            title = url.split('/')[-1].replace('-', ' ').title()
+        
+        # Try to extract article content
+        content = ""
+        
+        # Try common article selectors
+        article_selectors = [
+            soup.find('article'),
+            soup.find('div', class_='article-body'),
+            soup.find('div', class_='article-content'),
+            soup.find('div', class_='post-content'),
+            soup.find('div', class_='entry-content'),
+            soup.find('div', {'id': 'article-body'}),
+            soup.find('main'),
+        ]
+        
+        for selector in article_selectors:
+            if selector:
+                content = selector.get_text(separator='\n', strip=True)
+                if len(content) > 200:
+                    break
+        
+        # Fallback: get all paragraph text
+        if len(content) < 200:
+            paragraphs = soup.find_all('p')
+            content = '\n'.join([p.get_text(strip=True) for p in paragraphs])
+        
+        article_data = {
+            'title': title,
+            'url': url,
+            'published_date': datetime.date.today().isoformat(),
+            'content': content
+        }
+        
+        log_success(f"Successfully fetched: {title}")
+        log_info(f"Content length: {len(content)} characters")
+        
+        return article_data
+        
+    except requests.RequestException as e:
+        log_error(f"Failed to fetch article from {url}: {e}")
+        return None
+    except Exception as e:
+        log_error(f"Error processing article from {url}: {e}")
+        return None
 
 def fetch_and_scrape_articles_sequential(existing_urls, start_date, end_date):
     all_articles = []

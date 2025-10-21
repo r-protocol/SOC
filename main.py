@@ -2,14 +2,14 @@
 import sys
 import datetime
 from db_utils import initialize_database, get_existing_urls, store_analyzed_data, store_iocs, store_kql_queries
-from fetcher import fetch_and_scrape_articles_sequential
+from fetcher import fetch_and_scrape_articles_sequential, fetch_single_article
 from filtering import filter_articles_sequential
 from analysis import analyze_articles_sequential
 from report import generate_weekly_report, get_last_full_week_dates
-from logging_utils import log_step, log_warn, log_info, log_success
+from logging_utils import log_step, log_warn, log_info, log_success, log_error, BColors
 from config import ENABLE_KQL_GENERATION, KQL_EXPORT_DIR, KQL_EXPORT_ENABLED
 from kql_generator_llm import LLMKQLGenerator
-from kql_generator import save_queries_to_file
+from kql_generator import save_queries_to_file, IOCExtractor as RegexIOCExtractor
 
 def generate_kql_for_articles(article_ids):
     """Generate KQL queries for analyzed articles using LLM"""
@@ -70,6 +70,130 @@ def prompt_kql_generation():
     except (KeyboardInterrupt, EOFError):
         print(f"\n{BColors.WARNING}Skipping KQL generation.{BColors.ENDC}")
         return False
+
+
+def process_single_article(url, use_kql=False):
+    """Process a single article from URL - fetch, analyze, and optionally generate KQL"""
+    print(f"\n{BColors.HEADER}{'='*70}{BColors.ENDC}")
+    print(f"{BColors.HEADER}🔍 Single Article Processing Mode{BColors.ENDC}")
+    print(f"{BColors.HEADER}{'='*70}{BColors.ENDC}\n")
+    
+    # Step 1: Fetch article
+    log_step(1, "Fetching Article")
+    article = fetch_single_article(url)
+    
+    if not article:
+        log_error("Failed to fetch article. Exiting.")
+        return
+    
+    # Step 2: Filter for relevance
+    log_step(2, "Checking Cybersecurity Relevance")
+    relevant_articles = filter_articles_sequential([article])
+    
+    if not relevant_articles:
+        log_warn("Article is not relevant to cybersecurity. Exiting.")
+        return
+    
+    log_success(f"Article is relevant: {article['title']}")
+    
+    # Step 3: Analyze with LLM
+    log_step(3, "Analyzing Article with LLM")
+    analyzed_articles = analyze_articles_sequential(relevant_articles)
+    
+    if not analyzed_articles:
+        log_error("Failed to analyze article. Exiting.")
+        return
+    
+    analyzed_article = analyzed_articles[0]
+    
+    # Display analysis results
+    print(f"\n{BColors.OKGREEN}{'='*70}{BColors.ENDC}")
+    print(f"{BColors.OKGREEN}📊 Analysis Results{BColors.ENDC}")
+    print(f"{BColors.OKGREEN}{'='*70}{BColors.ENDC}")
+    print(f"{BColors.OKCYAN}Title:{BColors.ENDC} {analyzed_article['title']}")
+    print(f"{BColors.OKCYAN}Category:{BColors.ENDC} {analyzed_article.get('category', 'N/A')}")
+    print(f"{BColors.OKCYAN}Threat Risk:{BColors.ENDC} {analyzed_article.get('threat_risk', 'N/A')}")
+    print(f"{BColors.OKCYAN}Summary:{BColors.ENDC}")
+    print(f"  {analyzed_article.get('summary', 'N/A')[:300]}...")
+    print(f"{BColors.OKGREEN}{'='*70}{BColors.ENDC}\n")
+    
+    # Step 4: Generate KQL if requested
+    if use_kql:
+        log_step(4, "Generating KQL Queries (LLM + Regex)")
+        
+        # LLM-based extraction and query generation
+        print(f"\n{BColors.OKCYAN}🤖 LLM-Based IOC Extraction & KQL Generation{BColors.ENDC}")
+        print(f"{BColors.OKCYAN}{'='*70}{BColors.ENDC}")
+        
+        llm_generator = LLMKQLGenerator()
+        llm_iocs, llm_queries = llm_generator.generate_all(analyzed_article)
+        
+        # Display LLM IOCs
+        total_llm_iocs = sum(len(llm_iocs.get(key, [])) for key in llm_iocs)
+        print(f"\n{BColors.OKGREEN}✅ LLM Extracted {total_llm_iocs} IOCs:{BColors.ENDC}")
+        
+        for ioc_type, ioc_list in llm_iocs.items():
+            if ioc_list:
+                print(f"\n  {BColors.OKCYAN}{ioc_type.upper()}:{BColors.ENDC} ({len(ioc_list)})")
+                for ioc in ioc_list[:5]:  # Show first 5
+                    if isinstance(ioc, dict):
+                        context = ioc.get('context', 'unknown')
+                        confidence = ioc.get('confidence', 'unknown')
+                        value = ioc.get('value', str(ioc))
+                        desc = ioc.get('description', '')[:50]
+                        print(f"    • {value}")
+                        print(f"      Context: {context} | Confidence: {confidence}")
+                        if desc:
+                            print(f"      Description: {desc}...")
+                    else:
+                        print(f"    • {ioc}")
+                if len(ioc_list) > 5:
+                    print(f"    ... and {len(ioc_list) - 5} more")
+        
+        # Display LLM Queries
+        print(f"\n{BColors.OKGREEN}✅ LLM Generated {len(llm_queries)} KQL Queries:{BColors.ENDC}")
+        for i, query in enumerate(llm_queries, 1):
+            print(f"\n  {BColors.OKCYAN}Query {i}: {query.get('name', 'Unnamed')}{BColors.ENDC}")
+            print(f"    Type: {query.get('type', 'N/A')}")
+            print(f"    Platform: {query.get('platform', 'N/A')}")
+            print(f"    Description: {query.get('description', 'N/A')}")
+            print(f"    Tables: {', '.join(query.get('tables', []))}")
+        
+        # Regex-based extraction for comparison
+        print(f"\n{BColors.OKCYAN}⚡ Regex-Based IOC Extraction (for comparison){BColors.ENDC}")
+        print(f"{BColors.OKCYAN}{'='*70}{BColors.ENDC}")
+        
+        regex_extractor = RegexIOCExtractor()
+        regex_iocs = regex_extractor.extract_all(analyzed_article.get('content', ''))
+        
+        total_regex_iocs = sum(len(regex_iocs.get(key, [])) for key in regex_iocs)
+        print(f"\n{BColors.OKGREEN}✅ Regex Extracted {total_regex_iocs} IOCs:{BColors.ENDC}")
+        
+        for ioc_type, ioc_list in regex_iocs.items():
+            if ioc_list:
+                print(f"  {ioc_type}: {len(ioc_list)}")
+                for ioc in ioc_list[:3]:  # Show first 3
+                    value = ioc.get('value', str(ioc)) if isinstance(ioc, dict) else ioc
+                    print(f"    • {value}")
+                if len(ioc_list) > 3:
+                    print(f"    ... and {len(ioc_list) - 3} more")
+        
+        # Export queries
+        if llm_queries:
+            import os
+            os.makedirs(KQL_EXPORT_DIR, exist_ok=True)
+            save_queries_to_file(llm_queries, KQL_EXPORT_DIR)
+            log_success(f"Exported {len(llm_queries)} queries to '{KQL_EXPORT_DIR}/' directory")
+        
+        # Summary comparison
+        print(f"\n{BColors.HEADER}{'='*70}{BColors.ENDC}")
+        print(f"{BColors.HEADER}📊 LLM vs Regex Comparison{BColors.ENDC}")
+        print(f"{BColors.HEADER}{'='*70}{BColors.ENDC}")
+        print(f"{BColors.OKCYAN}LLM:{BColors.ENDC} {total_llm_iocs} IOCs with context | {len(llm_queries)} queries")
+        print(f"{BColors.OKCYAN}Regex:{BColors.ENDC} {total_regex_iocs} IOCs (no context) | Template-based")
+        print(f"{BColors.OKGREEN}{'='*70}{BColors.ENDC}\n")
+    
+    log_success("Single article processing complete!")
 
 
 def main_pipeline():
@@ -138,4 +262,30 @@ def main_pipeline():
 
 if __name__ == "__main__":
     DEBUG_MODE = "-debug" in sys.argv
-    main_pipeline()
+    
+    # Check for single article processing mode
+    source_url = None
+    if "-s" in sys.argv:
+        try:
+            s_index = sys.argv.index("-s")
+            if s_index + 1 < len(sys.argv):
+                source_url = sys.argv[s_index + 1]
+        except (ValueError, IndexError):
+            log_error("Invalid -s parameter. Please provide a URL.")
+            sys.exit(1)
+    elif "--source" in sys.argv:
+        try:
+            source_index = sys.argv.index("--source")
+            if source_index + 1 < len(sys.argv):
+                source_url = sys.argv[source_index + 1]
+        except (ValueError, IndexError):
+            log_error("Invalid --source parameter. Please provide a URL.")
+            sys.exit(1)
+    
+    # If source URL is provided, process single article
+    if source_url:
+        use_kql = "--kql" in sys.argv or "--auto-kql" in sys.argv
+        process_single_article(source_url, use_kql)
+    else:
+        # Normal pipeline mode
+        main_pipeline()
