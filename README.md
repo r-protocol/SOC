@@ -22,27 +22,63 @@ Automated threat intelligence collection, analysis, and threat hunting query gen
 
 ## Usage
 
-### Basic Usage
+### 📰 Pipeline Mode (Full Weekly Processing)
+
+#### Basic Usage
 ```bash
 python main.py
 ```
+Fetches from all RSS feeds, analyzes articles, and generates weekly report.
 
-### Limit Number of Articles
+#### Limit Number of Articles
 ```bash
 python main.py -n 5
 ```
 Processes only the first 5 articles (useful for testing).
 
-### Auto-Generate KQL Queries
+#### Auto-Generate KQL Queries
 ```bash
 python main.py --kql
 ```
 Automatically generates KQL queries without prompting.
 
-### Combined Options
+#### Combined Options
 ```bash
 python main.py -n 10 --kql
 ```
+
+### 🔍 Single Article Mode (Testing & Analysis)
+
+Process a single article from a URL for testing IOC extraction and KQL generation.
+
+#### Analyze Single Article
+```bash
+python main.py -s "https://article-url.com"
+```
+Fetches, analyzes, and displays threat assessment for one article.
+
+#### Analyze + Generate KQL (with LLM vs Regex Comparison)
+```bash
+python main.py -s "https://article-url.com" --kql
+```
+**Perfect for testing!** Shows:
+- ✅ LLM-based IOC extraction with context
+- ✅ Regex-based IOC extraction (comparison)
+- ✅ KQL query generation
+- ✅ Side-by-side comparison
+- ✅ Export to `.kql` files
+
+#### Example with Real Article
+```bash
+python main.py -s "https://www.bleepingcomputer.com/news/security/cisa-updates-conti-ransomware-alert-with-nearly-100-domain-names/" --kql
+```
+
+**Use single article mode for:**
+- 🧪 Testing IOC extraction quality
+- 📊 Comparing LLM vs Regex approaches
+- 🎯 Quick threat analysis
+- 🔍 Validating KQL query generation
+- 💡 Demonstrations
 
 ## 🤖 LLM-Enhanced KQL Query Generation
 
