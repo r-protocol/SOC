@@ -1,0 +1,392 @@
+# kql_generator_llm.py
+"""
+LLM-Enhanced KQL Query Generator for Threat Intelligence
+Uses Ollama LLM to intelligently extract IOCs and generate context-aware KQL queries
+"""
+
+import requests
+import json
+import re
+from typing import Dict, List, Optional
+from config import OLLAMA_MODEL, OLLAMA_HOST
+from logging_utils import log_info, log_success, log_warn, log_error, BColors
+
+# Import regex-based extractor as fallback
+from kql_generator import IOCExtractor as RegexIOCExtractor, KQLQueryGenerator as TemplateGenerator
+
+
+class LLMKQLGenerator:
+    """Generate KQL queries using LLM for intelligent IOC extraction and query generation"""
+    
+    def __init__(self):
+        self.regex_extractor = RegexIOCExtractor()  # Fallback
+        self.template_generator = TemplateGenerator()  # Fallback
+    
+    def extract_iocs_with_llm(self, article: Dict) -> Dict:
+        """Use LLM to extract IOCs with context understanding"""
+        
+        prompt = f"""You are a cybersecurity threat intelligence analyst. Extract ALL Indicators of Compromise (IOCs) from this article.
+
+CRITICAL: Output ONLY valid JSON. No markdown, no explanations.
+
+Extract and categorize IOCs into these types:
+1. **ips**: IPv4/IPv6 addresses (include defanged like 192[.]168[.]1[.]1)
+2. **domains**: Domain names (include defanged like evil[.]com)
+3. **urls**: Full URLs (include defanged)
+4. **hashes**: File hashes (MD5, SHA1, SHA256)
+5. **cves**: CVE identifiers (CVE-YYYY-NNNNN)
+6. **emails**: Email addresses
+7. **filenames**: Malicious filenames mentioned
+8. **registry_keys**: Windows registry keys
+9. **techniques**: MITRE ATT&CK technique IDs if mentioned
+
+For each IOC, include:
+- "value": the IOC (normalize defanged: 192[.]168[.]1[.]1 → 192.168.1.1)
+- "context": "attacker" or "victim" or "infrastructure" 
+- "confidence": "high", "medium", or "low"
+- "description": brief context from article
+
+Article Title: {article['title']}
+Article Content: {article.get('content', '')[:6000]}
+
+Output JSON structure:
+{{
+  "ips": [{{"value": "192.168.1.1", "context": "attacker", "confidence": "high", "description": "C2 server"}}],
+  "domains": [{{"value": "evil.com", "context": "infrastructure", "confidence": "high", "description": "malware distribution"}}],
+  "urls": [],
+  "hashes": [],
+  "cves": [],
+  "emails": [],
+  "filenames": [],
+  "registry_keys": [],
+  "techniques": []
+}}
+
+Respond with JSON only:"""
+
+        try:
+            response = requests.post(
+                f"{OLLAMA_HOST}/api/generate",
+                json={
+                    "model": OLLAMA_MODEL,
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {
+                        "temperature": 0.2,  # Low for structured output
+                        "top_p": 0.9
+                    }
+                },
+                timeout=120
+            )
+            response.raise_for_status()
+            response_text = response.json()['response'].strip()
+            
+            # Parse JSON
+            iocs = self._parse_llm_response(response_text)
+            
+            if iocs:
+                total = sum(len(iocs.get(key, [])) for key in iocs)
+                log_success(f"LLM extracted {total} IOCs from '{article['title']}'")
+                return iocs
+            else:
+                log_warn(f"LLM returned empty IOCs, falling back to regex for '{article['title']}'")
+                return self._fallback_extraction(article)
+                
+        except Exception as e:
+            log_error(f"LLM extraction failed: {e}, using regex fallback")
+            return self._fallback_extraction(article)
+    
+    def _parse_llm_response(self, response_text: str) -> Optional[Dict]:
+        """Parse LLM JSON response with repair"""
+        # Find JSON boundaries
+        json_start = response_text.find('{')
+        json_end = response_text.rfind('}')
+        
+        if json_start == -1 or json_end == -1:
+            return None
+        
+        json_str = response_text[json_start:json_end + 1]
+        
+        try:
+            iocs = json.loads(json_str)
+            
+            # Validate structure
+            expected_keys = ['ips', 'domains', 'urls', 'hashes', 'cves', 'emails']
+            if not any(key in iocs for key in expected_keys):
+                log_warn("LLM response missing expected IOC categories")
+                return None
+            
+            # Ensure all lists exist
+            for key in expected_keys + ['filenames', 'registry_keys', 'techniques']:
+                if key not in iocs:
+                    iocs[key] = []
+            
+            return iocs
+            
+        except json.JSONDecodeError as e:
+            log_error(f"Failed to parse LLM JSON: {e}")
+            return None
+    
+    def _fallback_extraction(self, article: Dict) -> Dict:
+        """Fallback to regex-based extraction"""
+        log_info(f"Using regex fallback for '{article['title']}'")
+        regex_iocs = self.regex_extractor.extract_all(article.get('content', ''))
+        
+        # Convert regex format to LLM format
+        enhanced_iocs = {
+            'ips': [{'value': ioc['value'], 'context': 'unknown', 'confidence': 'medium', 'description': ioc.get('context', '')} 
+                    for ioc in regex_iocs.get('ips', [])],
+            'domains': [{'value': ioc['value'], 'context': 'unknown', 'confidence': 'medium', 'description': ioc.get('context', '')} 
+                        for ioc in regex_iocs.get('domains', [])],
+            'urls': [{'value': ioc['value'], 'context': 'unknown', 'confidence': 'medium', 'description': ioc.get('context', '')} 
+                     for ioc in regex_iocs.get('urls', [])],
+            'hashes': [{'value': ioc['value'], 'context': 'unknown', 'confidence': 'medium', 'description': ioc.get('context', '')} 
+                       for ioc in regex_iocs.get('hashes', [])],
+            'cves': [{'value': ioc['value'], 'context': 'unknown', 'confidence': 'high', 'description': ioc.get('context', '')} 
+                     for ioc in regex_iocs.get('cves', [])],
+            'emails': [{'value': ioc['value'], 'context': 'unknown', 'confidence': 'medium', 'description': ioc.get('context', '')} 
+                       for ioc in regex_iocs.get('emails', [])],
+            'filenames': [],
+            'registry_keys': [],
+            'techniques': []
+        }
+        
+        return enhanced_iocs
+    
+    def generate_kql_with_llm(self, article: Dict, iocs: Dict) -> List[Dict]:
+        """Use LLM to generate context-aware KQL queries"""
+        
+        # Filter high-confidence IOCs for query generation
+        high_conf_iocs = self._filter_high_confidence(iocs)
+        
+        if not high_conf_iocs:
+            log_warn(f"No high-confidence IOCs for '{article['title']}', using templates")
+            return self.template_generator.generate_queries(article)
+        
+        prompt = f"""You are a threat hunting expert. Generate KQL queries for Microsoft Defender/Sentinel to hunt for these threats.
+
+Article: {article['title']}
+Risk: {article.get('threat_risk', 'UNKNOWN')}
+Category: {article.get('category', 'Unknown')}
+
+Extracted IOCs:
+{json.dumps(high_conf_iocs, indent=2)}
+
+Generate 2-4 KQL queries. For each query, provide:
+1. **name**: Descriptive query name
+2. **type**: "IOC_Hunt" or "Behavior_Hunt" or "Vulnerability_Hunt"
+3. **description**: What the query detects
+4. **kql**: The actual KQL query (use appropriate tables: DeviceNetworkEvents, DeviceFileEvents, DeviceProcessEvents, CommonSecurityLog, etc.)
+
+IMPORTANT:
+- Use correct KQL syntax
+- Include time filters (ago(30d))
+- Use proper operators (in, has_any, contains)
+- Include relevant project fields
+- Add comments in queries
+
+Output JSON only:
+{{
+  "queries": [
+    {{
+      "name": "Hunt for C2 Communication",
+      "type": "IOC_Hunt",
+      "description": "Detect network connections to attacker infrastructure",
+      "platform": "Microsoft Defender",
+      "kql": "DeviceNetworkEvents\\n| where Timestamp > ago(30d)\\n| where RemoteIP in ('1.2.3.4')\\n| project Timestamp, DeviceName, RemoteIP"
+    }}
+  ]
+}}
+
+Respond with JSON only:"""
+
+        try:
+            response = requests.post(
+                f"{OLLAMA_HOST}/api/generate",
+                json={
+                    "model": OLLAMA_MODEL,
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {
+                        "temperature": 0.3,
+                        "top_p": 0.9
+                    }
+                },
+                timeout=120
+            )
+            response.raise_for_status()
+            response_text = response.json()['response'].strip()
+            
+            # Parse queries
+            queries = self._parse_query_response(response_text, article)
+            
+            if queries:
+                log_success(f"LLM generated {len(queries)} queries for '{article['title']}'")
+                return queries
+            else:
+                log_warn(f"LLM query generation failed, using templates for '{article['title']}'")
+                return self.template_generator.generate_queries(article)
+                
+        except Exception as e:
+            log_error(f"LLM query generation failed: {e}, using templates")
+            return self.template_generator.generate_queries(article)
+    
+    def _filter_high_confidence(self, iocs: Dict) -> Dict:
+        """Filter IOCs by confidence level"""
+        filtered = {}
+        
+        for ioc_type, ioc_list in iocs.items():
+            if isinstance(ioc_list, list):
+                high_conf = [
+                    ioc for ioc in ioc_list 
+                    if isinstance(ioc, dict) and ioc.get('confidence', 'low') in ['high', 'medium']
+                ]
+                if high_conf:
+                    filtered[ioc_type] = high_conf
+        
+        return filtered
+    
+    def _parse_query_response(self, response_text: str, article: Dict) -> List[Dict]:
+        """Parse LLM query response"""
+        json_start = response_text.find('{')
+        json_end = response_text.rfind('}')
+        
+        if json_start == -1 or json_end == -1:
+            return []
+        
+        json_str = response_text[json_start:json_end + 1]
+        
+        try:
+            parsed = json.loads(json_str)
+            queries = parsed.get('queries', [])
+            
+            # Enhance query metadata
+            for query in queries:
+                query['article_title'] = article['title']
+                query['threat_risk'] = article.get('threat_risk', 'UNKNOWN')
+                
+                # Clean up KQL (unescape newlines)
+                if 'kql' in query:
+                    query['query'] = query['kql'].replace('\\n', '\n')
+                    del query['kql']
+                
+                # Add defaults
+                if 'platform' not in query:
+                    query['platform'] = 'Microsoft Defender'
+                if 'category' not in query:
+                    query['category'] = 'Network'
+                if 'tables' not in query:
+                    query['tables'] = self._extract_tables(query.get('query', ''))
+            
+            return queries
+            
+        except json.JSONDecodeError as e:
+            log_error(f"Failed to parse query JSON: {e}")
+            return []
+    
+    def _extract_tables(self, kql: str) -> List[str]:
+        """Extract table names from KQL query"""
+        tables = []
+        # Common Defender/Sentinel tables
+        table_patterns = [
+            'DeviceNetworkEvents', 'DeviceFileEvents', 'DeviceProcessEvents',
+            'DeviceLogonEvents', 'DeviceEvents', 'DeviceRegistryEvents',
+            'CommonSecurityLog', 'SecurityEvent', 'Syslog',
+            'EmailEvents', 'EmailAttachmentInfo', 'DeviceTvmSoftwareVulnerabilities'
+        ]
+        
+        for table in table_patterns:
+            if table in kql:
+                tables.append(table)
+        
+        return tables
+    
+    def generate_all(self, article: Dict) -> tuple:
+        """
+        Full LLM-based generation pipeline
+        Returns: (iocs, queries)
+        """
+        # Step 1: Extract IOCs with LLM
+        iocs = self.extract_iocs_with_llm(article)
+        
+        # Step 2: Generate queries with LLM
+        queries = self.generate_kql_with_llm(article, iocs)
+        
+        return iocs, queries
+
+
+# ============================================================================
+# UTILITY FUNCTIONS
+# ============================================================================
+
+def generate_kql_llm(article: Dict) -> tuple:
+    """
+    Main function to generate IOCs and KQL queries using LLM
+    Returns: (iocs, queries)
+    """
+    generator = LLMKQLGenerator()
+    iocs, queries = generator.generate_all(article)
+    
+    total_iocs = sum(len(iocs.get(key, [])) for key in iocs)
+    log_info(f"Total: {total_iocs} IOCs, {len(queries)} queries for '{article['title']}'")
+    
+    return iocs, queries
+
+
+def generate_kql_batch_llm(articles: List[Dict]) -> tuple:
+    """
+    Generate KQL for multiple articles using LLM
+    Returns: (all_iocs_dict, all_queries_list)
+    """
+    generator = LLMKQLGenerator()
+    all_iocs = {}
+    all_queries = []
+    
+    for article in articles:
+        iocs, queries = generator.generate_all(article)
+        all_iocs[article['title']] = iocs
+        all_queries.extend(queries)
+    
+    return all_iocs, all_queries
+
+
+if __name__ == "__main__":
+    # Test with sample article
+    print(f"\n{BColors.HEADER}=== LLM KQL Generator Test ==={BColors.ENDC}\n")
+    
+    test_article = {
+        'title': 'New Ransomware Campaign Targets Healthcare',
+        'content': '''
+        A sophisticated ransomware campaign has been targeting healthcare organizations.
+        The attackers use IP address 192[.]168[.]100[.]50 as their command and control server.
+        They also operate backup infrastructure at evil-domain[.]com and malicious-site[.]net.
+        
+        The malware file hash is SHA256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+        
+        This campaign exploits CVE-2024-1234 to gain initial access.
+        Phishing emails from attacker@evil[.]com are used as the initial vector.
+        ''',
+        'threat_risk': 'HIGH',
+        'category': 'Ransomware'
+    }
+    
+    iocs, queries = generate_kql_llm(test_article)
+    
+    print(f"\n{BColors.OKCYAN}IOCs Extracted:{BColors.ENDC}")
+    for ioc_type, ioc_list in iocs.items():
+        if ioc_list:
+            print(f"  {ioc_type}: {len(ioc_list)}")
+            for ioc in ioc_list[:2]:
+                if isinstance(ioc, dict):
+                    print(f"    - {ioc.get('value')} (confidence: {ioc.get('confidence')})")
+    
+    print(f"\n{BColors.OKCYAN}KQL Queries Generated:{BColors.ENDC}")
+    for i, query in enumerate(queries, 1):
+        print(f"\n{BColors.OKGREEN}Query {i}: {query.get('name')}{BColors.ENDC}")
+        print(f"  Type: {query.get('type')}")
+        print(f"  Platform: {query.get('platform')}")
+        print(f"  Description: {query.get('description')}")
+        if 'query' in query:
+            print(f"  Query preview: {query['query'][:100]}...")
+    
+    print(f"\n{BColors.HEADER}=== Test Complete! ==={BColors.ENDC}\n")
