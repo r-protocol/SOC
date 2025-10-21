@@ -1,0 +1,8 @@
+// Detecting SAP NetWeaver Command Execution
+// Type: Behavioral_Hunt
+// Description: This query detects suspicious process creation related to the exploitation of the SAP NetWeaver vulnerability that allows arbitrary command execution.
+// MITRE ATT&CK: T1059
+
+DeviceProcessEvents
+| where ProcessCommandLine contains 'sapnetweaver' and not ProcessCommandLine matches '.*\.exe'
+| summarize Count=count() by DeviceName, bin(Timestamp, 1h)

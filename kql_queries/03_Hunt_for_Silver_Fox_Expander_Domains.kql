@@ -1,0 +1,19 @@
+// Hunt for Silver Fox Expander Domains
+// Type: IOC_Hunt
+// Description: Detect network connections, DNS queries, and firewall logs related to the Silver Fox ransomware expansion into Japan and Malaysia.
+
+// Hunt for connections to Silver Fox campaign domains
+DeviceNetworkEvents
+| where Timestamp > ago(30d)
+| where RemoteUrl has_any ("evil.com")
+| summarize FirstSeen=min(Timestamp), LastSeen=max(Timestamp), Count=count() by DeviceName, RemoteUrl
+// Hunt for DNS queries related to Silver Fox campaign domains
+DnsEvents
+| where Timestamp > ago(30d)
+| where Query has_any ("evil.com")
+| summarize FirstSeen=min(Timestamp), LastSeen=max(Timestamp), Count=count() by DeviceName, Query
+// Hunt for firewall blocks related to Silver Fox campaign domains
+CommonSecurityLog
+| where Timestamp > ago(30d)
+| where DestinationAddress has_any ("evil.com")
+| summarize FirstSeen=min(Timestamp), LastSeen=max(Timestamp), Count=count() by DeviceName, DestinationAddress

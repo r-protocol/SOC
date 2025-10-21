@@ -1,0 +1,9 @@
+// RMPocalypse_MemoryWrite_Hunt
+// Type: Behavioral_Hunt
+// Description: Detects suspicious memory write operations that could be indicative of the RMPocalypse vulnerability exploitation.
+// MITRE ATT&CK: T1059
+
+DeviceProcessEvents
+| where CommandLine contains 'memcpy' or CommandLine contains 'write'
+| where not (ImagePath matches '*svchost.exe*' or ImagePath matches '*services.exe*')
+| summarize CountOfOperations = count() by Account, ProcessName

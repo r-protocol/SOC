@@ -1,0 +1,12 @@
+// Detect LinkPro Linux Rootkit Activity
+// Type: Behavioral_Hunt
+// Description: Identifies suspicious processes and file operations associated with the LinkPro Linux rootkit.
+// MITRE ATT&CK: T1059, T1055
+
+DeviceProcessEvents
+| where ProcessCommandLine contains 'linkpro' or ProcessName == 'bpf'
+| summarize Count = count() by Device, CommandLine
+| where Count > 1
+
+DeviceFileEvents
+| where FileName contains '.ebpf' or FilePath contains '/rootkit/'

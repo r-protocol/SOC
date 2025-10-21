@@ -1,0 +1,8 @@
+// Detecting Rhysida Ransomware Certificate Fraud
+// Type: Behavioral_Hunt
+// Description: Identifies suspicious process creation related to the use of fraudulent certificates for deploying Rhysida ransomware.
+// MITRE ATT&CK: T1059, T1055
+
+DeviceProcessEvents
+| where ProcessCommandLine contains 'certutil.exe' and ProcessCommandLine contains 'fakeTeamsSetup'
+| summarize Count() by Account, CommandLine

@@ -1,0 +1,8 @@
+// Detecting Misconfigured Penetration Testing Tools
+// Type: Behavioral_Hunt
+// Description: This query detects the misuse of penetration testing tools that are misconfigured to execute malicious activities beyond intended security assessments.
+// MITRE ATT&CK: T1059, T1055
+
+DeviceProcessEvents
+| where ProcessCommandLine contains 'penetration-test' and not (ProcessCommandLine contains 'security' or ProcessCommandLine contains 'assessment')
+| summarize CountOfProcess = count() by ProcessName, ProcessCommandLine
