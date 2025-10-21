@@ -25,25 +25,30 @@ class LLMKQLGenerator:
     def extract_iocs_with_llm(self, article: Dict) -> Dict:
         """Use LLM to extract IOCs with context understanding"""
         
-        prompt = f"""You are a cybersecurity threat intelligence analyst. Extract ALL Indicators of Compromise (IOCs) from this article.
+        prompt = f"""You are a cybersecurity threat intelligence analyst. Extract ONLY real Indicators of Compromise (IOCs) that are explicitly mentioned in the article text.
 
-CRITICAL: Output ONLY valid JSON. No markdown, no explanations.
+CRITICAL RULES:
+1. Output ONLY valid JSON. No markdown, no explanations.
+2. Extract ONLY IOCs that appear in the article content
+3. DO NOT generate example IPs like 192.168.x.x or 203.0.113.x (these are private/documentation IPs)
+4. DO NOT invent or hallucinate IOCs
+5. If no IOCs are found, return empty arrays
 
 Extract and categorize IOCs into these types:
-1. **ips**: IPv4/IPv6 addresses (include defanged like 192[.]168[.]1[.]1)
+1. **ips**: IPv4/IPv6 addresses (PUBLIC IPs only, not 10.x, 172.16-31.x, 192.168.x)
 2. **domains**: Domain names (include defanged like evil[.]com)
 3. **urls**: Full URLs (include defanged)
-4. **hashes**: File hashes (MD5, SHA1, SHA256)
-5. **cves**: CVE identifiers (CVE-YYYY-NNNNN)
+4. **hashes**: File hashes (MD5, SHA1, SHA256, SHA512)
+5. **cves**: CVE identifiers (CVE-YYYY-NNNNN format)
 6. **emails**: Email addresses
 7. **filenames**: Malicious filenames mentioned
 8. **registry_keys**: Windows registry keys
-9. **techniques**: MITRE ATT&CK technique IDs if mentioned
+9. **techniques**: MITRE ATT&CK technique IDs (T1234 format)
 
 For each IOC, include:
-- "value": the IOC (normalize defanged: 192[.]168[.]1[.]1 → 192.168.1.1)
+- "value": the IOC (normalize defanged: evil[.]com → evil.com)
 - "context": "attacker" or "victim" or "infrastructure" 
-- "confidence": "high", "medium", or "low"
+- "confidence": "high" (explicitly stated), "medium" (implied), or "low" (mentioned casually)
 - "description": brief context from article
 
 Article Title: {article['title']}
@@ -51,8 +56,8 @@ Article Content: {article.get('content', '')[:6000]}
 
 Output JSON structure:
 {{
-  "ips": [{{"value": "192.168.1.1", "context": "attacker", "confidence": "high", "description": "C2 server"}}],
-  "domains": [{{"value": "evil.com", "context": "infrastructure", "confidence": "high", "description": "malware distribution"}}],
+  "ips": [],
+  "domains": [],
   "urls": [],
   "hashes": [],
   "cves": [],
@@ -160,9 +165,13 @@ Respond with JSON only:"""
         # Filter high-confidence IOCs for query generation
         high_conf_iocs = self._filter_high_confidence(iocs)
         
+        # Validate IOCs - remove hallucinated/private IPs
+        high_conf_iocs = self._validate_iocs(high_conf_iocs)
+        
+        # If no real IOCs, try to generate behavioral/TTP-based queries
         if not high_conf_iocs:
-            log_warn(f"No high-confidence IOCs for '{article['title']}', using templates")
-            return self.template_generator.generate_queries(article)
+            log_info(f"No IOCs found in '{article['title']}', analyzing for behavioral hunting queries")
+            return self._generate_behavioral_queries(article)
         
         # Determine primary IOC type
         ioc_counts = {k: len(v) for k, v in high_conf_iocs.items() if v}
@@ -305,6 +314,153 @@ Respond with JSON only:"""
                     query['ioc_count'] = len(hash_values)
         
         return queries
+    
+    def _validate_iocs(self, iocs: Dict) -> Dict:
+        """Remove hallucinated or invalid IOCs"""
+        import ipaddress
+        
+        validated = {}
+        
+        # Validate IPs - remove private/reserved IPs
+        if 'ips' in iocs and iocs['ips']:
+            valid_ips = []
+            for ioc in iocs['ips']:
+                if isinstance(ioc, dict):
+                    ip = ioc.get('value', '')
+                    try:
+                        ip_obj = ipaddress.ip_address(ip)
+                        # Skip private, loopback, reserved IPs
+                        if not (ip_obj.is_private or ip_obj.is_loopback or 
+                               ip_obj.is_reserved or ip_obj.is_multicast):
+                            # Skip common placeholders
+                            if ip not in ['203.0.113.1', '203.0.113.0', '198.51.100.1']:
+                                valid_ips.append(ioc)
+                    except:
+                        pass
+            if valid_ips:
+                validated['ips'] = valid_ips
+        
+        # Validate domains - remove example domains
+        if 'domains' in iocs and iocs['domains']:
+            valid_domains = []
+            invalid_domains = ['example.com', 'example.org', 'example.net', 'test.com', 'domain.com']
+            for ioc in iocs['domains']:
+                if isinstance(ioc, dict):
+                    domain = ioc.get('value', '').lower()
+                    if domain and domain not in invalid_domains and not domain.startswith('example'):
+                        valid_domains.append(ioc)
+            if valid_domains:
+                validated['domains'] = valid_domains
+        
+        # Pass through other IOC types (hashes, CVEs are usually real)
+        for ioc_type in ['hashes', 'cves', 'urls', 'emails']:
+            if ioc_type in iocs and iocs[ioc_type]:
+                validated[ioc_type] = iocs[ioc_type]
+        
+        return validated
+    
+    def _generate_behavioral_queries(self, article: Dict) -> List[Dict]:
+        """Generate TTP-based hunting queries when no IOCs are available"""
+        
+        prompt = f"""You are a threat hunting expert. Analyze this cybersecurity article and generate ONE behavioral/TTP-based KQL hunting query.
+
+Article: {article['title']}
+Category: {article.get('category', 'Unknown')}
+Risk: {article.get('threat_risk', 'UNKNOWN')}
+Summary: {article.get('summary', '')}
+Content: {article.get('content', '')[:3000]}
+
+TASK: If this article describes a real threat (malware, attack technique, vulnerability exploitation):
+1. Understand the threat's behavior and TTPs
+2. Generate ONE behavioral KQL query that hunts for signs of this threat
+3. Focus on: suspicious processes, registry changes, file operations, network patterns, command patterns
+
+If this is just news/awareness/policy content (no technical threat):
+- Return empty response
+
+For behavioral queries, focus on:
+- Process execution patterns (suspicious command lines, parent-child relationships)
+- File operations (unusual file writes, extensions, paths)
+- Registry modifications (persistence mechanisms)
+- Network behavior (connection patterns, protocols, ports)
+- Authentication anomalies (failed logins, privilege escalation)
+
+Use tables like:
+- DeviceProcessEvents (process creation, command lines)
+- DeviceFileEvents (file operations)
+- DeviceRegistryEvents (registry changes)
+- DeviceNetworkEvents (network connections)
+- SecurityEvent (authentication, privileges)
+
+Output JSON:
+{{
+  "name": "Descriptive query name based on threat behavior",
+  "type": "Behavioral_Hunt",
+  "description": "What this query detects (be specific to the threat)",
+  "tables": ["DeviceProcessEvents", "DeviceFileEvents"],
+  "mitre_techniques": ["T1059", "T1055"],
+  "query": "// KQL query here\\nDeviceProcessEvents\\n| where..."
+}}
+
+Return ONLY JSON. If not a technical threat, return: {{"skip": true}}
+"""
+
+        try:
+            response = requests.post(
+                f"{OLLAMA_HOST}/api/generate",
+                json={
+                    "model": OLLAMA_MODEL,
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {
+                        "temperature": 0.2,  # Slightly higher for creative behavioral queries
+                        "top_p": 0.9,
+                        "num_predict": 2048
+                    }
+                },
+                timeout=120
+            )
+            response.raise_for_status()
+            response_text = response.json()['response'].strip()
+            
+            # Parse response - look for JSON
+            json_start = response_text.find('{')
+            json_end = response_text.rfind('}')
+            
+            if json_start == -1 or json_end == -1:
+                log_info(f"No JSON response for '{article['title']}', skipping")
+                return []
+            
+            json_str = response_text[json_start:json_end + 1]
+            
+            try:
+                query_data = json.loads(json_str)
+            except json.JSONDecodeError as e:
+                log_error(f"Failed to parse behavioral query JSON: {e}")
+                return []
+            
+            if not query_data or query_data.get('skip'):
+                log_info(f"Article '{article['title']}' is not technical threat content, skipping")
+                return []
+            
+            # Format as query list
+            query = {
+                'name': query_data.get('name', 'Behavioral Hunt'),
+                'type': query_data.get('type', 'Behavioral_Hunt'),
+                'description': query_data.get('description', 'Hunt for threat behavior'),
+                'query': query_data.get('query', ''),
+                'tables': query_data.get('tables', []),
+                'mitre_techniques': query_data.get('mitre_techniques', []),
+                'platform': 'Microsoft Defender',
+                'ioc_count': 0  # No IOCs, behavioral only
+            }
+            
+            log_success(f"Generated behavioral hunting query for '{article['title']}'")
+            return [query]
+            
+        except Exception as e:
+            log_error(f"Failed to generate behavioral query: {e}")
+            return []
     
     def _filter_high_confidence(self, iocs: Dict) -> Dict:
         """Filter IOCs by confidence level"""
