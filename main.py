@@ -1,13 +1,14 @@
 # main.py
 import sys
 import datetime
+import sqlite3
 from db_utils import initialize_database, get_existing_urls, store_analyzed_data, store_iocs, store_kql_queries
 from fetcher import fetch_and_scrape_articles_sequential, fetch_single_article
 from filtering import filter_articles_sequential
 from analysis import analyze_articles_sequential
 from report import generate_weekly_report, get_last_full_week_dates
 from logging_utils import log_step, log_warn, log_info, log_success, log_error, BColors
-from config import ENABLE_KQL_GENERATION, KQL_EXPORT_DIR, KQL_EXPORT_ENABLED
+from config import ENABLE_KQL_GENERATION, KQL_EXPORT_DIR, KQL_EXPORT_ENABLED, DATABASE_PATH
 from kql_generator_llm import LLMKQLGenerator
 from kql_generator import save_queries_to_file, IOCExtractor as RegexIOCExtractor
 
@@ -260,8 +261,389 @@ def main_pipeline():
         log_info("No new articles to generate KQL queries for.")
 
 
+# ============================================================================
+# ENHANCED CLI COMMANDS
+# ============================================================================
+
+def cmd_list_articles(limit=20, filter_risk=None, filter_category=None):
+    """List articles from database with optional filters"""
+    print(f"\n{BColors.BOLD}{'='*70}{BColors.ENDC}")
+    print(f"{BColors.BOLD}📰 Articles Database{BColors.ENDC}")
+    print(f"{BColors.BOLD}{'='*70}{BColors.ENDC}\n")
+    
+    conn = sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+    
+    # Build query with filters
+    query = "SELECT id, title, category, threat_risk, published_date FROM articles"
+    where_clauses = []
+    params = []
+    
+    if filter_risk:
+        where_clauses.append("threat_risk = ?")
+        params.append(filter_risk.upper())
+    
+    if filter_category:
+        where_clauses.append("category = ?")
+        params.append(filter_category)
+    
+    if where_clauses:
+        query += " WHERE " + " AND ".join(where_clauses)
+    
+    query += " ORDER BY published_date DESC LIMIT ?"
+    params.append(limit)
+    
+    cursor.execute(query, params)
+    articles = cursor.fetchall()
+    
+    if not articles:
+        print(f"{BColors.WARNING}No articles found.{BColors.ENDC}\n")
+        conn.close()
+        return
+    
+    # Display articles
+    for i, (article_id, title, category, risk, date) in enumerate(articles, 1):
+        risk_color = {
+            'HIGH': BColors.FAIL,
+            'MEDIUM': BColors.WARNING,
+            'LOW': BColors.OKGREEN,
+            'INFORMATIONAL': BColors.OKBLUE
+        }.get(risk, BColors.ENDC)
+        
+        print(f"{BColors.BOLD}{i}. [{article_id}]{BColors.ENDC} {title[:70]}...")
+        print(f"   Category: {BColors.OKCYAN}{category}{BColors.ENDC} | Risk: {risk_color}{risk}{BColors.ENDC} | Date: {date}")
+        print()
+    
+    # Show totals
+    cursor.execute("SELECT COUNT(*) FROM articles")
+    total = cursor.fetchone()[0]
+    print(f"{BColors.BOLD}{'─'*70}{BColors.ENDC}")
+    print(f"Showing {len(articles)} of {total} total articles\n")
+    
+    conn.close()
+
+
+def cmd_search_articles(keyword, limit=10):
+    """Search articles by keyword in title, content, or summary"""
+    print(f"\n{BColors.BOLD}{'='*70}{BColors.ENDC}")
+    print(f"{BColors.BOLD}🔍 Search Results for: '{keyword}'{BColors.ENDC}")
+    print(f"{BColors.BOLD}{'='*70}{BColors.ENDC}\n")
+    
+    conn = sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+    
+    query = """
+        SELECT id, title, category, threat_risk, published_date, summary
+        FROM articles
+        WHERE title LIKE ? OR content LIKE ? OR summary LIKE ?
+        ORDER BY published_date DESC
+        LIMIT ?
+    """
+    
+    search_term = f"%{keyword}%"
+    cursor.execute(query, (search_term, search_term, search_term, limit))
+    results = cursor.fetchall()
+    
+    if not results:
+        print(f"{BColors.WARNING}No articles found matching '{keyword}'.{BColors.ENDC}\n")
+        conn.close()
+        return
+    
+    for i, (article_id, title, category, risk, date, summary) in enumerate(results, 1):
+        risk_color = {
+            'HIGH': BColors.FAIL,
+            'MEDIUM': BColors.WARNING,
+            'LOW': BColors.OKGREEN
+        }.get(risk, BColors.ENDC)
+        
+        print(f"{BColors.BOLD}{i}. [{article_id}]{BColors.ENDC} {title}")
+        print(f"   Risk: {risk_color}{risk}{BColors.ENDC} | Category: {category} | Date: {date}")
+        if summary:
+            print(f"   {summary[:150]}...")
+        print()
+    
+    print(f"{BColors.BOLD}Found {len(results)} articles{BColors.ENDC}\n")
+    conn.close()
+
+
+def cmd_show_stats():
+    """Display database statistics and insights"""
+    print(f"\n{BColors.BOLD}{'='*70}{BColors.ENDC}")
+    print(f"{BColors.BOLD}📊 Threat Intelligence Statistics{BColors.ENDC}")
+    print(f"{BColors.BOLD}{'='*70}{BColors.ENDC}\n")
+    
+    conn = sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+    
+    # Total articles
+    cursor.execute("SELECT COUNT(*) FROM articles")
+    total_articles = cursor.fetchone()[0]
+    print(f"{BColors.BOLD}Total Articles:{BColors.ENDC} {total_articles}")
+    
+    # Articles by risk level
+    print(f"\n{BColors.BOLD}Risk Distribution:{BColors.ENDC}")
+    cursor.execute("SELECT threat_risk, COUNT(*) FROM articles GROUP BY threat_risk ORDER BY COUNT(*) DESC")
+    for risk, count in cursor.fetchall():
+        risk_color = {
+            'HIGH': BColors.FAIL,
+            'MEDIUM': BColors.WARNING,
+            'LOW': BColors.OKGREEN,
+            'INFORMATIONAL': BColors.OKBLUE
+        }.get(risk, BColors.ENDC)
+        percentage = (count / total_articles * 100) if total_articles > 0 else 0
+        bar = '█' * int(percentage / 2)
+        print(f"  {risk_color}{risk:15}{BColors.ENDC}: {count:3} ({percentage:5.1f}%) {bar}")
+    
+    # Articles by category
+    print(f"\n{BColors.BOLD}Top Categories:{BColors.ENDC}")
+    cursor.execute("SELECT category, COUNT(*) FROM articles GROUP BY category ORDER BY COUNT(*) DESC LIMIT 5")
+    for category, count in cursor.fetchall():
+        print(f"  {BColors.OKCYAN}{category:20}{BColors.ENDC}: {count:3}")
+    
+    # Total IOCs
+    cursor.execute("SELECT COUNT(*) FROM iocs")
+    total_iocs = cursor.fetchone()[0]
+    print(f"\n{BColors.BOLD}Total IOCs:{BColors.ENDC} {total_iocs}")
+    
+    # IOCs by type
+    if total_iocs > 0:
+        print(f"\n{BColors.BOLD}IOC Types:{BColors.ENDC}")
+        cursor.execute("SELECT ioc_type, COUNT(*) FROM iocs GROUP BY ioc_type ORDER BY COUNT(*) DESC")
+        for ioc_type, count in cursor.fetchall():
+            print(f"  {ioc_type:15}: {count:3}")
+    
+    # Total KQL queries
+    cursor.execute("SELECT COUNT(*) FROM kql_queries")
+    total_queries = cursor.fetchone()[0]
+    print(f"\n{BColors.BOLD}KQL Queries:{BColors.ENDC} {total_queries}")
+    
+    # Recent activity
+    print(f"\n{BColors.BOLD}Recent Activity (Last 7 Days):{BColors.ENDC}")
+    cursor.execute("""
+        SELECT COUNT(*) FROM articles 
+        WHERE published_date >= date('now', '-7 days')
+    """)
+    recent_count = cursor.fetchone()[0]
+    print(f"  New articles: {recent_count}")
+    
+    # Top threats this week
+    print(f"\n{BColors.BOLD}Top Threats (Last 7 Days):{BColors.ENDC}")
+    cursor.execute("""
+        SELECT title, threat_risk FROM articles 
+        WHERE published_date >= date('now', '-7 days')
+        AND threat_risk = 'HIGH'
+        ORDER BY published_date DESC
+        LIMIT 5
+    """)
+    threats = cursor.fetchall()
+    if threats:
+        for title, risk in threats:
+            print(f"  {BColors.FAIL}•{BColors.ENDC} {title[:65]}...")
+    else:
+        print(f"  {BColors.ENDC}No high-risk threats in the last 7 days")
+    
+    print(f"\n{BColors.BOLD}{'='*70}{BColors.ENDC}\n")
+    conn.close()
+
+
+def cmd_show_article(article_id):
+    """Display detailed information about a specific article"""
+    conn = sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        SELECT id, title, url, category, threat_risk, published_date, summary, content
+        FROM articles WHERE id = ?
+    """, (article_id,))
+    
+    article = cursor.fetchone()
+    
+    if not article:
+        print(f"\n{BColors.FAIL}Article ID {article_id} not found.{BColors.ENDC}\n")
+        conn.close()
+        return
+    
+    aid, title, url, category, risk, date, summary, content = article
+    
+    risk_color = {
+        'HIGH': BColors.FAIL,
+        'MEDIUM': BColors.WARNING,
+        'LOW': BColors.OKGREEN
+    }.get(risk, BColors.ENDC)
+    
+    print(f"\n{BColors.BOLD}{'='*70}{BColors.ENDC}")
+    print(f"{BColors.BOLD}Article Details [{aid}]{BColors.ENDC}")
+    print(f"{BColors.BOLD}{'='*70}{BColors.ENDC}\n")
+    
+    print(f"{BColors.BOLD}Title:{BColors.ENDC} {title}")
+    print(f"{BColors.BOLD}URL:{BColors.ENDC} {url}")
+    print(f"{BColors.BOLD}Category:{BColors.ENDC} {BColors.OKCYAN}{category}{BColors.ENDC}")
+    print(f"{BColors.BOLD}Risk:{BColors.ENDC} {risk_color}{risk}{BColors.ENDC}")
+    print(f"{BColors.BOLD}Date:{BColors.ENDC} {date}")
+    
+    if summary:
+        print(f"\n{BColors.BOLD}Summary:{BColors.ENDC}")
+        print(f"{summary}\n")
+    
+    # Show IOCs
+    cursor.execute("SELECT ioc_type, COUNT(*) FROM iocs WHERE article_id = ? GROUP BY ioc_type", (aid,))
+    iocs = cursor.fetchall()
+    if iocs:
+        print(f"{BColors.BOLD}IOCs Found:{BColors.ENDC}")
+        for ioc_type, count in iocs:
+            print(f"  {ioc_type}: {count}")
+        print()
+    
+    # Show KQL queries
+    cursor.execute("SELECT COUNT(*) FROM kql_queries WHERE article_id = ?", (aid,))
+    query_count = cursor.fetchone()[0]
+    if query_count > 0:
+        print(f"{BColors.BOLD}KQL Queries:{BColors.ENDC} {query_count} generated")
+        print()
+    
+    print(f"{BColors.BOLD}{'='*70}{BColors.ENDC}\n")
+    conn.close()
+
+
+def cmd_export_iocs(output_file="iocs_export.csv", filter_type=None):
+    """Export IOCs to CSV file"""
+    import csv
+    
+    conn = sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+    
+    query = """
+        SELECT i.ioc_type, i.ioc_value, i.context, a.title, a.published_date
+        FROM iocs i
+        JOIN articles a ON i.article_id = a.id
+    """
+    
+    if filter_type:
+        query += " WHERE i.ioc_type = ?"
+        cursor.execute(query, (filter_type,))
+    else:
+        cursor.execute(query)
+    
+    iocs = cursor.fetchall()
+    
+    if not iocs:
+        print(f"\n{BColors.WARNING}No IOCs found to export.{BColors.ENDC}\n")
+        conn.close()
+        return
+    
+    with open(output_file, 'w', newline='', encoding='utf-8') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(['Type', 'Value', 'Context', 'Article', 'Date'])
+        writer.writerows(iocs)
+    
+    print(f"\n{BColors.OKGREEN}✓{BColors.ENDC} Exported {len(iocs)} IOCs to '{output_file}'\n")
+    conn.close()
+
+
+def cmd_show_help():
+    """Display help message with all available commands"""
+    help_text = f"""
+{BColors.BOLD}{'='*70}{BColors.ENDC}
+{BColors.BOLD}🔧 Threat Intelligence Pipeline - Enhanced CLI{BColors.ENDC}
+{BColors.BOLD}{'='*70}{BColors.ENDC}
+
+{BColors.BOLD}BASIC USAGE:{BColors.ENDC}
+  python main.py                    Run full weekly pipeline
+  python main.py --kql              Run pipeline + generate KQL queries
+  python main.py -s <URL> --kql     Process single article with KQL
+
+{BColors.BOLD}QUERY & BROWSE COMMANDS:{BColors.ENDC}
+  --list [N]                        List last N articles (default: 20)
+  --list --risk HIGH                List only HIGH risk articles
+  --list --category Malware         List articles by category
+  
+  --search <keyword>                Search articles by keyword
+  --search "ransomware" --limit 20  Search with custom limit
+  
+  --show <ID>                       Show detailed info for article ID
+  --stats                           Display database statistics
+
+{BColors.BOLD}EXPORT COMMANDS:{BColors.ENDC}
+  --export-iocs                     Export all IOCs to CSV
+  --export-iocs --type domains      Export only domains
+  --export-iocs --output file.csv   Export to custom filename
+
+{BColors.BOLD}FILTERING OPTIONS:{BColors.ENDC}
+  --risk <LEVEL>                    Filter by risk: HIGH, MEDIUM, LOW
+  --category <NAME>                 Filter by category: Malware, Ransomware, etc.
+  --limit <N>                       Limit number of results
+  --type <IOC_TYPE>                 Filter IOCs: domains, ips, hashes, cves
+
+{BColors.BOLD}EXAMPLES:{BColors.ENDC}
+  python main.py --list
+  python main.py --search "conti ransomware"
+  python main.py --stats
+  python main.py --show 15
+  python main.py --export-iocs --type domains
+  python main.py --list --risk HIGH --limit 10
+
+{BColors.BOLD}{'='*70}{BColors.ENDC}
+"""
+    print(help_text)
+
+
 if __name__ == "__main__":
     DEBUG_MODE = "-debug" in sys.argv
+    
+    # Helper function to get argument value
+    def get_arg_value(arg_name, default=None):
+        """Get value for an argument"""
+        if arg_name in sys.argv:
+            try:
+                idx = sys.argv.index(arg_name)
+                if idx + 1 < len(sys.argv):
+                    return sys.argv[idx + 1]
+            except (ValueError, IndexError):
+                pass
+        return default
+    
+    # Check for CLI query commands first (these don't run the pipeline)
+    if "--help" in sys.argv or "-h" in sys.argv:
+        cmd_show_help()
+        sys.exit(0)
+    
+    elif "--stats" in sys.argv:
+        cmd_show_stats()
+        sys.exit(0)
+    
+    elif "--list" in sys.argv:
+        limit = int(get_arg_value("--limit", 20))
+        risk_filter = get_arg_value("--risk")
+        category_filter = get_arg_value("--category")
+        cmd_list_articles(limit=limit, filter_risk=risk_filter, filter_category=category_filter)
+        sys.exit(0)
+    
+    elif "--search" in sys.argv:
+        keyword = get_arg_value("--search")
+        if not keyword:
+            log_error("Please provide a search keyword: --search <keyword>")
+            sys.exit(1)
+        limit = int(get_arg_value("--limit", 10))
+        cmd_search_articles(keyword, limit=limit)
+        sys.exit(0)
+    
+    elif "--show" in sys.argv:
+        article_id = get_arg_value("--show")
+        if not article_id:
+            log_error("Please provide an article ID: --show <id>")
+            sys.exit(1)
+        try:
+            cmd_show_article(int(article_id))
+        except ValueError:
+            log_error("Article ID must be a number")
+            sys.exit(1)
+        sys.exit(0)
+    
+    elif "--export-iocs" in sys.argv:
+        output_file = get_arg_value("--output", "iocs_export.csv")
+        filter_type = get_arg_value("--type")
+        cmd_export_iocs(output_file=output_file, filter_type=filter_type)
+        sys.exit(0)
     
     # Check for single article processing mode
     source_url = None
