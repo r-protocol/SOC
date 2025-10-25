@@ -80,6 +80,63 @@ python main.py -s "https://www.bleepingcomputer.com/news/security/cisa-updates-c
 - 🔍 Validating KQL query generation
 - 💡 Demonstrations
 
+### 📊 Enhanced CLI Commands (Database Query & Analysis)
+
+Query and browse your threat intelligence database without running the full pipeline.
+
+#### View Database Statistics
+```bash
+python main.py --stats
+```
+Shows comprehensive statistics:
+- Total articles by risk level
+- Article distribution by category
+- Total IOCs and types
+- Recent activity (last 7 days)
+- Top threats this week
+
+#### List Articles
+```bash
+python main.py --list
+python main.py --list --limit 20
+python main.py --list --risk HIGH
+python main.py --list --category Malware
+python main.py --list --risk HIGH --limit 10
+```
+Browse articles with optional filters by risk level and category.
+
+#### Search Articles
+```bash
+python main.py --search "ransomware"
+python main.py --search "CVE-2025" --limit 20
+```
+Search articles by keyword in title, content, or summary.
+
+#### Show Article Details
+```bash
+python main.py --show 5
+```
+Display detailed information for a specific article ID including:
+- Full title and URL
+- Risk level and category
+- Summary
+- IOC counts by type
+- Generated KQL queries
+
+#### Export IOCs
+```bash
+python main.py --export-iocs
+python main.py --export-iocs --output my_iocs.csv
+python main.py --export-iocs --type domains
+```
+Export all IOCs to CSV file with optional filtering by type.
+
+#### Help Command
+```bash
+python main.py --help
+```
+Display all available CLI commands and usage examples.
+
 ## 🤖 LLM-Enhanced KQL Query Generation
 
 After the report is generated, you'll be prompted:
@@ -205,7 +262,20 @@ pip install -r requirements.txt
 |--------|-------------|
 | `-n <number>` | Limit number of articles to process |
 | `--kql` or `--auto-kql` | Auto-generate KQL queries without prompt |
-| `-debug` | Enable debug mode (future use) |
+| `-s <URL>` or `--source <URL>` | Process single article from URL |
+| `-debug` | Enable debug mode |
+| `--help` or `-h` | Show help message with all commands |
+| **Database Query Commands** ||
+| `--stats` | Display database statistics and insights |
+| `--list` | List articles (default: 20) |
+| `--list --limit <N>` | List N most recent articles |
+| `--list --risk <LEVEL>` | Filter by risk level (HIGH/MEDIUM/LOW) |
+| `--list --category <NAME>` | Filter by category |
+| `--search <keyword>` | Search articles by keyword |
+| `--show <ID>` | Display detailed info for article ID |
+| `--export-iocs` | Export all IOCs to CSV |
+| `--export-iocs --output <file>` | Export to custom filename |
+| `--export-iocs --type <IOC_TYPE>` | Export specific IOC type only |
 
 ## Examples
 
@@ -223,6 +293,29 @@ python main.py --kql
 ```bash
 python main.py -n 5
 # Press 'n' when prompted for KQL generation
+```
+
+### Single Article Analysis
+```bash
+python main.py -s "https://thehackernews.com/article" --kql
+```
+
+### Database Query Examples
+```bash
+# View statistics
+python main.py --stats
+
+# Browse recent high-risk articles
+python main.py --list --risk HIGH --limit 10
+
+# Search for specific threat
+python main.py --search "ransomware"
+
+# View article details
+python main.py --show 15
+
+# Export domains to CSV
+python main.py --export-iocs --type domains --output domains.csv
 ```
 
 ## Workflow
