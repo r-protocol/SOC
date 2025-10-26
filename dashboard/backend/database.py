@@ -2,6 +2,7 @@ import sqlite3
 from datetime import datetime, timedelta
 from collections import defaultdict
 import os
+import re
 
 # Path to your database
 DATABASE_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "threat_intel.db")
@@ -560,6 +561,7 @@ class ThreatIntelDB:
         try:
             date_filter = self._get_date_filter(days, start_date, end_date)
             
+            # Limit to 1000 most recent articles for performance
             cursor.execute(f"""
                 SELECT id, title, category, published_date, summary, content
                 FROM articles
@@ -567,6 +569,7 @@ class ThreatIntelDB:
                 AND threat_risk != 'NOT_RELEVANT'
                 AND {date_filter}
                 ORDER BY published_date DESC
+                LIMIT 1000
             """)
             
             rows = cursor.fetchall()
@@ -664,6 +667,78 @@ class ThreatIntelDB:
                                 'type': actor_info['type'],
                                 'lat': actor_info['lat'],
                                 'lon': actor_info['lon'],
+                                'articles': [],
+                                'incident_count': 0
+                            }
+                        
+                        # Add article reference
+                        actors_found[actor_name]['articles'].append({
+                            'title': row['title'],
+                            'date': row['published_date'],
+                            'id': row['id']
+                        })
+                        actors_found[actor_name]['incident_count'] += 1
+            
+            # SECOND PASS: Extract additional threat actor names dynamically from articles
+            # Look for patterns like APT##, TA###, Storm-####, group names with "Group/Gang/Team"
+            actor_patterns = [
+                r'\b(APT\d+)\b',                          # APT28, APT41, etc.
+                r'\b(TA\d+)\b',                            # TA505, TA558, etc.
+                r'\b(Storm-\d+)\b',                        # Storm-0978, Storm-1234, etc.
+                r'\b(FIN\d+)\b',                           # FIN7, FIN12, etc.
+                r'\b([A-Z][a-z]+\s+(?:Group|Gang|Team))\b',  # Lazarus Group, Ember Team, etc.
+                r'\b([A-Z][a-z]+(?:Spider|Bear|Panda|Kitten|Chollima))\b',  # WizardSpider, FancyBear, etc.
+            ]
+            
+            for row in rows:
+                text = ' '.join([
+                    row['title'] or '',
+                    row['summary'] or '',
+                    row['content'] or ''
+                ])
+                
+                # Search for pattern matches
+                for pattern in actor_patterns:
+                    matches = re.finditer(pattern, text, re.IGNORECASE)
+                    for match in matches:
+                        actor_name = match.group(1)
+                        
+                        # Skip if already found via known database
+                        if actor_name in actors_found:
+                            continue
+                        
+                        # Determine actor type based on naming convention
+                        actor_type = 'APT'
+                        if 'ransomware' in text.lower():
+                            actor_type = 'Ransomware'
+                        elif any(x in actor_name.lower() for x in ['fin', 'ta', 'wizard', 'spider']):
+                            actor_type = 'Cybercrime'
+                        
+                        # Default location (Unknown - Central Europe)
+                        lat, lon = 51.1657, 10.4515
+                        country = 'Unknown'
+                        
+                        # Try to infer country from context
+                        if any(x in text.lower() for x in ['russia', 'russian', 'moscow']):
+                            lat, lon = 55.7558, 37.6173
+                            country = 'Russia'
+                        elif any(x in text.lower() for x in ['china', 'chinese', 'beijing']):
+                            lat, lon = 39.9042, 116.4074
+                            country = 'China'
+                        elif any(x in text.lower() for x in ['north korea', 'pyongyang', 'dprk']):
+                            lat, lon = 39.0392, 125.7625
+                            country = 'North Korea'
+                        elif any(x in text.lower() for x in ['iran', 'iranian', 'tehran']):
+                            lat, lon = 35.6892, 51.3890
+                            country = 'Iran'
+                        
+                        if actor_name not in actors_found:
+                            actors_found[actor_name] = {
+                                'actor': actor_name,
+                                'country': country,
+                                'type': actor_type,
+                                'lat': lat,
+                                'lon': lon,
                                 'articles': [],
                                 'incident_count': 0
                             }
