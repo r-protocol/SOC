@@ -8,7 +8,7 @@ import RSSFeedStats from './components/RSSFeedStats';
 import ThreatFamilies from './components/ThreatFamilies';
 
 function App() {
-  const [refreshInterval, setRefreshInterval] = useState(60000); // 60 seconds
+  const [refreshInterval, setRefreshInterval] = useState(300000); // 5 minutes (300 seconds)
   const [error, setError] = useState(null);
   const [timeRange, setTimeRange] = useState({ type: '7days', days: 7 });
   const [showCustomDays, setShowCustomDays] = useState(false);
@@ -98,7 +98,7 @@ function App() {
       <header className="header">
         <h1>🛡️ SOC Threat Intelligence Dashboard</h1>
         <p className="header-subtitle">
-          Real-time threat monitoring and analysis • Auto-refresh every 60s
+          Real-time threat monitoring and analysis • Auto-refresh every 5 minutes
         </p>
         
         {/* Time Range Filter */}

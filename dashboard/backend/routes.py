@@ -94,10 +94,16 @@ def threat_families():
 def article_details(article_id):
     """Get detailed article information"""
     try:
+        print(f"📖 Fetching article details for ID: {article_id}")
         data = db.get_article_details(article_id)
         if data:
+            print(f"✅ Article {article_id} found, returning data")
             return jsonify(data), 200
         else:
+            print(f"❌ Article {article_id} not found in database")
             return jsonify({"error": "Article not found"}), 404
     except Exception as e:
+        print(f"❌ Error fetching article {article_id}: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500

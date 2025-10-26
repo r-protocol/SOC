@@ -226,6 +226,16 @@ class ThreatIntelDB:
                 except:
                     pass
                 
+                # Get KQL query count for this article
+                kql_count = 0
+                try:
+                    cursor.execute("SELECT COUNT(*) as count FROM kql_queries WHERE article_id = ?", (row['id'],))
+                    kql_result = cursor.fetchone()
+                    if kql_result:
+                        kql_count = kql_result['count']
+                except:
+                    pass
+                
                 threats.append({
                     "id": row['id'],
                     "title": row['title'],
@@ -234,7 +244,8 @@ class ThreatIntelDB:
                     "risk_level": row['threat_risk'] or 'LOW',
                     "published_date": row['published_date'],
                     "source_url": row['url'],
-                    "ioc_count": ioc_count
+                    "ioc_count": ioc_count,
+                    "kql_count": kql_count
                 })
             
             conn.close()
@@ -290,38 +301,71 @@ class ThreatIntelDB:
             return {"domains": 0, "ips": 0, "hashes": 0, "cves": 0, "urls": 0, "emails": 0}
     
     def get_rss_feed_stats(self):
-        """Get RSS feed statistics"""
+        """Get RSS feed statistics - Top 10 feeds by article count"""
         conn = self.get_connection()
         cursor = conn.cursor()
         
         try:
+            # Extract domain from URL and count articles
             cursor.execute("""
                 SELECT url, COUNT(*) as count
                 FROM articles
                 GROUP BY url
+                ORDER BY count DESC
             """)
             
-            feed_stats = []
-            feed_names = {
-                "bleepingcomputer": "BleepingComputer",
-                "thehackernews": "The Hacker News",
-                "darkreading": "Dark Reading",
-                "threatpost": "Threatpost",
-                "krebsonsecurity": "Krebs on Security"
-            }
-            
+            # Build domain-based statistics
             source_counts = defaultdict(int)
-            for row in cursor.fetchall():
-                source = row['url'] or ""
-                for key in feed_names.keys():
-                    if key in source.lower():
-                        source_counts[key] += row['count']
-                        break
+            source_urls = defaultdict(str)
             
-            for key, name in feed_names.items():
-                count = source_counts.get(key, 0)
+            for row in cursor.fetchall():
+                url = row['url'] or ""
+                count = row['count']
+                
+                # Extract domain/source name from URL
+                domain = ""
+                if "://" in url:
+                    domain = url.split("://")[1].split("/")[0]
+                else:
+                    domain = url.split("/")[0]
+                
+                # Remove www. prefix
+                domain = domain.replace("www.", "")
+                
+                source_counts[domain] += count
+                if not source_urls[domain]:
+                    source_urls[domain] = url
+            
+            # Get top 10 sources
+            top_sources = sorted(source_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+            
+            feed_stats = []
+            for domain, count in top_sources:
+                # Clean up domain name for display
+                display_name = domain.split('.')[0].title() if domain else "Unknown"
+                
+                # More readable names for known sources
+                name_mapping = {
+                    "bleepingcomputer": "BleepingComputer",
+                    "thehackernews": "The Hacker News",
+                    "darkreading": "Dark Reading",
+                    "threatpost": "Threatpost",
+                    "krebsonsecurity": "Krebs on Security",
+                    "securityweek": "SecurityWeek",
+                    "cyberscoop": "CyberScoop",
+                    "zdnet": "ZDNet",
+                    "arstechnica": "Ars Technica",
+                    "theregister": "The Register"
+                }
+                
+                for key, value in name_mapping.items():
+                    if key in domain.lower():
+                        display_name = value
+                        break
+                
                 feed_stats.append({
-                    "name": name,
+                    "name": display_name,
+                    "domain": domain,
                     "articles": count,
                     "parsed": count,
                     "last_success": datetime.now().isoformat()
@@ -340,6 +384,7 @@ class ThreatIntelDB:
         cursor = conn.cursor()
         
         try:
+            print(f"🔍 Querying article {article_id} from database...")
             cursor.execute("""
                 SELECT * FROM articles WHERE id = ?
             """, (article_id,))
@@ -347,8 +392,11 @@ class ThreatIntelDB:
             row = cursor.fetchone()
             
             if not row:
+                print(f"⚠️ Article {article_id} not found in database")
                 conn.close()
                 return None
+            
+            print(f"✅ Article {article_id} found: {row['title'][:50]}...")
             
             # Get IOCs for this article
             iocs = []
@@ -359,38 +407,52 @@ class ThreatIntelDB:
                     WHERE article_id = ?
                 """, (article_id,))
                 iocs = [dict(row) for row in cursor.fetchall()]
-            except:
+                print(f"📊 Found {len(iocs)} IOCs for article {article_id}")
+            except Exception as ioc_err:
+                print(f"⚠️ Error fetching IOCs: {ioc_err}")
                 pass
             
             # Get KQL queries for this article
             kql_queries = []
             try:
                 cursor.execute("""
-                    SELECT query_name, query_text, query_type
+                    SELECT query_name, kql_query, query_type, platform
                     FROM kql_queries
                     WHERE article_id = ?
                 """, (article_id,))
                 kql_queries = [dict(row) for row in cursor.fetchall()]
-            except:
+                print(f"📊 Found {len(kql_queries)} KQL queries for article {article_id}")
+            except Exception as kql_err:
+                print(f"⚠️ Error fetching KQL queries: {kql_err}")
                 pass
             
             conn.close()
             
-            return {
+            # Access row fields properly
+            content = row['content'] if 'content' in row.keys() else ''
+            recommendations = row['recommendations'] if 'recommendations' in row.keys() else ''
+            
+            result = {
                 "id": row['id'],
                 "title": row['title'],
                 "summary": row['summary'],
-                "content": row.get('content', ''),
+                "content": content,
                 "category": row['category'],
                 "risk_level": row['threat_risk'],
                 "published_date": row['published_date'],
                 "source_url": row['url'],
-                "recommendations": row.get('recommendations', ''),
+                "recommendations": recommendations,
                 "iocs": iocs,
                 "kql_queries": kql_queries
             }
+            
+            print(f"✅ Returning article data for {article_id}")
+            return result
+            
         except Exception as e:
-            print(f"❌ Error in get_article_details: {e}")
+            print(f"❌ Error in get_article_details for article {article_id}: {e}")
+            import traceback
+            traceback.print_exc()
             conn.close()
             return None
     
