@@ -22,7 +22,6 @@ RSS_FEEDS = [
     "https://www.crowdstrike.com/blog/feed/",
     "https://www.rapid7.com/blog/rss/",
     "https://feeds.trendmicro.com/TrendMicroResearch",
-    "https://www.mcafee.com/blogs/feed/",
     "https://blog.checkpoint.com/feed/",
     "https://www.proofpoint.com/us/rss.xml",
     "https://nakedsecurity.sophos.com/feed/",
@@ -69,6 +68,12 @@ OLLAMA_MODEL = "deepseek-coder-v2:16b"  # Specialized coding model - better for 
 OLLAMA_HOST = "http://localhost:11434"
 TEMPLATE_DOCX_PATH = "template.docx"
 OUTPUT_DOCX_PATH = f"Threat_Intelligence_Report_{datetime.date.today()}.docx"
+
+# Fetcher Settings
+FETCH_DAYS_BACK = 14  # How many days back to fetch articles (2 weeks rolling window)
+MIN_ARTICLE_LENGTH = 100  # Minimum content length in characters (lowered from 200)
+FETCH_TIMEOUT = 30  # Request timeout in seconds for article fetching
+SOCKET_TIMEOUT = 30  # Socket timeout in seconds for RSS feed parsing
 
 # KQL Generator Settings
 ENABLE_KQL_GENERATION = True

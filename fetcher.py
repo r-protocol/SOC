@@ -6,7 +6,7 @@ import socket
 import sys
 import datetime
 from bs4 import BeautifulSoup
-from config import RSS_FEEDS
+from config import RSS_FEEDS, MIN_ARTICLE_LENGTH, FETCH_TIMEOUT, SOCKET_TIMEOUT
 from logging_utils import log_info, log_success, log_warn, log_error, BColors
 
 USER_AGENTS = [
@@ -21,7 +21,7 @@ def fetch_single_article(url):
     
     try:
         headers = {'User-Agent': random.choice(USER_AGENTS)}
-        response = requests.get(url, headers=headers, timeout=30)
+        response = requests.get(url, headers=headers, timeout=FETCH_TIMEOUT)
         response.raise_for_status()
         
         soup = BeautifulSoup(response.content, 'html.parser')
@@ -52,11 +52,11 @@ def fetch_single_article(url):
         for selector in article_selectors:
             if selector:
                 content = selector.get_text(separator='\n', strip=True)
-                if len(content) > 200:
+                if len(content) > MIN_ARTICLE_LENGTH:
                     break
         
         # Fallback: get all paragraph text
-        if len(content) < 200:
+        if len(content) < MIN_ARTICLE_LENGTH:
             paragraphs = soup.find_all('p')
             content = '\n'.join([p.get_text(strip=True) for p in paragraphs])
         
@@ -81,12 +81,12 @@ def fetch_single_article(url):
 
 def fetch_and_scrape_articles_sequential(existing_urls, start_date, end_date):
     all_articles = []
-    log_info(f"Searching for new articles from {len(RSS_FEEDS)} sources for the week of {start_date} to {end_date}...")
+    log_info(f"Searching for new articles from {len(RSS_FEEDS)} sources for {start_date} to {end_date} ({(end_date - start_date).days + 1} days)...")
     total_feeds = len(RSS_FEEDS)
     total_articles = 0
     for feed_url in RSS_FEEDS:
         try:
-            socket.setdefaulttimeout(20)
+            socket.setdefaulttimeout(SOCKET_TIMEOUT)
             feed = feedparser.parse(feed_url)
             socket.setdefaulttimeout(None)
             total_articles += len(feed.entries)
@@ -115,7 +115,7 @@ def fetch_and_scrape_articles_sequential(existing_urls, start_date, end_date):
     status_messages = []
     for feed_url in RSS_FEEDS:
         try:
-            socket.setdefaulttimeout(20)
+            socket.setdefaulttimeout(SOCKET_TIMEOUT)
             feed = feedparser.parse(feed_url)
             socket.setdefaulttimeout(None)
             for entry in feed.entries:
@@ -135,10 +135,10 @@ def fetch_and_scrape_articles_sequential(existing_urls, start_date, end_date):
                         article_data['content'] = BeautifulSoup(entry.content[0].value, 'html.parser').get_text(strip=True)
                     elif hasattr(entry, 'summary'):
                         article_data['content'] = BeautifulSoup(entry.summary, 'html.parser').get_text(strip=True)
-                    if len(article_data['content']) < 200:
+                    if len(article_data['content']) < MIN_ARTICLE_LENGTH:
                         try:
                             headers = {'User-Agent': random.choice(USER_AGENTS)}
-                            response = requests.get(article_data['url'], headers=headers, timeout=15)
+                            response = requests.get(article_data['url'], headers=headers, timeout=FETCH_TIMEOUT)
                             response.raise_for_status()
                             soup = BeautifulSoup(response.content, 'html.parser')
                             body = soup.find('article') or soup.find('div', class_='article-body')

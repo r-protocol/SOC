@@ -8,9 +8,16 @@ from filtering import filter_articles_sequential
 from analysis import analyze_articles_sequential
 from report import generate_weekly_report, get_last_full_week_dates
 from logging_utils import log_step, log_warn, log_info, log_success, log_error, BColors
-from config import ENABLE_KQL_GENERATION, KQL_EXPORT_DIR, KQL_EXPORT_ENABLED, DATABASE_PATH
+from config import ENABLE_KQL_GENERATION, KQL_EXPORT_DIR, KQL_EXPORT_ENABLED, DATABASE_PATH, FETCH_DAYS_BACK
 from kql_generator_llm import LLMKQLGenerator
 from kql_generator import save_queries_to_file, IOCExtractor as RegexIOCExtractor
+
+
+def get_rolling_date_range(days_back=14):
+    """Get rolling date range for fetching articles (NOT for reports)"""
+    end_date = datetime.date.today()
+    start_date = end_date - datetime.timedelta(days=days_back)
+    return start_date, end_date
 
 def generate_kql_for_articles(article_ids):
     """Generate KQL queries for analyzed articles using LLM"""
@@ -215,11 +222,15 @@ def main_pipeline():
 
     initialize_database()
     existing_urls = get_existing_urls()
-    start_date, end_date = get_last_full_week_dates()
     
-    # Phase 1: Fetch and Scrape all new articles
+    # Use rolling 2-week window for FETCHING (not for reports)
+    fetch_start_date, fetch_end_date = get_rolling_date_range(days_back=FETCH_DAYS_BACK)
+    
+    log_info(f"Fetch window: {fetch_start_date} to {fetch_end_date} ({FETCH_DAYS_BACK} days)")
+    
+    # Phase 1: Fetch and Scrape all new articles using 2-week rolling window
     log_step(1, "Fetching and Scraping New Articles")
-    new_articles = fetch_and_scrape_articles_sequential(existing_urls, start_date, end_date)
+    new_articles = fetch_and_scrape_articles_sequential(existing_urls, fetch_start_date, fetch_end_date)
     
     # Apply article limit if specified
     if article_limit and len(new_articles) > article_limit:
@@ -543,46 +554,130 @@ def cmd_export_iocs(output_file="iocs_export.csv", filter_type=None):
 def cmd_show_help():
     """Display help message with all available commands"""
     help_text = f"""
-{BColors.BOLD}{'='*70}{BColors.ENDC}
-{BColors.BOLD}🔧 Threat Intelligence Pipeline - Enhanced CLI{BColors.ENDC}
-{BColors.BOLD}{'='*70}{BColors.ENDC}
+{BColors.BOLD}{'='*80}{BColors.ENDC}
+{BColors.BOLD}🔧 Threat Intelligence Pipeline - Complete Command Reference{BColors.ENDC}
+{BColors.BOLD}{'='*80}{BColors.ENDC}
 
-{BColors.BOLD}BASIC USAGE:{BColors.ENDC}
-  python main.py                    Run full weekly pipeline
-  python main.py --kql              Run pipeline + generate KQL queries
-  python main.py -s <URL> --kql     Process single article with KQL
+{BColors.HEADER}PIPELINE MODES:{BColors.ENDC}
+  {BColors.OKGREEN}python main.py{BColors.ENDC}
+      Run full pipeline: Fetch articles (2-week window), analyze, generate report
 
-{BColors.BOLD}QUERY & BROWSE COMMANDS:{BColors.ENDC}
-  --list [N]                        List last N articles (default: 20)
-  --list --risk HIGH                List only HIGH risk articles
-  --list --category Malware         List articles by category
-  
-  --search <keyword>                Search articles by keyword
-  --search "ransomware" --limit 20  Search with custom limit
-  
-  --show <ID>                       Show detailed info for article ID
-  --stats                           Display database statistics
+  {BColors.OKGREEN}python main.py -n <N>{BColors.ENDC}
+      Limit processing to N articles (useful for testing)
+      Example: python main.py -n 20
 
-{BColors.BOLD}EXPORT COMMANDS:{BColors.ENDC}
-  --export-iocs                     Export all IOCs to CSV
-  --export-iocs --type domains      Export only domains
-  --export-iocs --output file.csv   Export to custom filename
+  {BColors.OKGREEN}python main.py --kql{BColors.ENDC} or {BColors.OKGREEN}--auto-kql{BColors.ENDC}
+      Run pipeline and automatically generate KQL queries
 
-{BColors.BOLD}FILTERING OPTIONS:{BColors.ENDC}
-  --risk <LEVEL>                    Filter by risk: HIGH, MEDIUM, LOW
-  --category <NAME>                 Filter by category: Malware, Ransomware, etc.
-  --limit <N>                       Limit number of results
-  --type <IOC_TYPE>                 Filter IOCs: domains, ips, hashes, cves
+  {BColors.OKGREEN}python main.py -s <URL>{BColors.ENDC} or {BColors.OKGREEN}--source <URL>{BColors.ENDC}
+      Process a single article from URL (fetch, analyze, store)
+      Example: python main.py -s https://example.com/article --kql
 
-{BColors.BOLD}EXAMPLES:{BColors.ENDC}
-  python main.py --list
-  python main.py --search "conti ransomware"
-  python main.py --stats
-  python main.py --show 15
-  python main.py --export-iocs --type domains
-  python main.py --list --risk HIGH --limit 10
+  {BColors.OKGREEN}python main.py -debug{BColors.ENDC}
+      Enable debug mode for troubleshooting
 
-{BColors.BOLD}{'='*70}{BColors.ENDC}
+{BColors.HEADER}DATABASE QUERY COMMANDS:{BColors.ENDC}
+  {BColors.OKCYAN}--list{BColors.ENDC}
+      List articles from database (default: 20 most recent)
+      Example: python main.py --list
+      
+  {BColors.OKCYAN}--list --limit <N>{BColors.ENDC}
+      List N most recent articles
+      Example: python main.py --list --limit 50
+
+  {BColors.OKCYAN}--list --risk <LEVEL>{BColors.ENDC}
+      Filter articles by risk level: HIGH, MEDIUM, LOW, INFORMATIONAL
+      Example: python main.py --list --risk HIGH
+
+  {BColors.OKCYAN}--list --category <NAME>{BColors.ENDC}
+      Filter articles by category (e.g., Malware, Ransomware, APT)
+      Example: python main.py --list --category "Ransomware"
+
+  {BColors.OKCYAN}--search <keyword>{BColors.ENDC}
+      Search articles by keyword in title, content, or summary
+      Example: python main.py --search "WSUS vulnerability"
+
+  {BColors.OKCYAN}--search <keyword> --limit <N>{BColors.ENDC}
+      Search with custom result limit
+      Example: python main.py --search "APT36" --limit 10
+
+  {BColors.OKCYAN}--show <ID>{BColors.ENDC}
+      Display detailed information for specific article ID
+      Example: python main.py --show 42
+
+  {BColors.OKCYAN}--stats{BColors.ENDC}
+      Show database statistics and threat insights
+
+{BColors.HEADER}EXPORT COMMANDS:{BColors.ENDC}
+  {BColors.WARNING}--export-iocs{BColors.ENDC}
+      Export all IOCs to CSV file (default: iocs_export.csv)
+      Example: python main.py --export-iocs
+
+  {BColors.WARNING}--export-iocs --output <file>{BColors.ENDC}
+      Export IOCs to custom filename
+      Example: python main.py --export-iocs --output my_iocs.csv
+
+  {BColors.WARNING}--export-iocs --type <IOC_TYPE>{BColors.ENDC}
+      Export only specific IOC type: domains, ips, hashes, cves, urls
+      Example: python main.py --export-iocs --type domains
+
+{BColors.HEADER}CONFIGURATION PARAMETERS:{BColors.ENDC}
+  {BColors.OKBLUE}-n <N>{BColors.ENDC}
+      Limit article processing to N articles
+      
+  {BColors.OKBLUE}--limit <N>{BColors.ENDC}
+      Limit search/list results to N items
+      
+  {BColors.OKBLUE}--risk <LEVEL>{BColors.ENDC}
+      Filter by risk: HIGH, MEDIUM, LOW, INFORMATIONAL
+      
+  {BColors.OKBLUE}--category <NAME>{BColors.ENDC}
+      Filter by category name
+      
+  {BColors.OKBLUE}--type <IOC_TYPE>{BColors.ENDC}
+      Filter IOCs by type: domains, ips, hashes, cves, urls
+      
+  {BColors.OKBLUE}--output <file>{BColors.ENDC}
+      Specify output filename for exports
+
+{BColors.HEADER}HELP & INFO:{BColors.ENDC}
+  {BColors.FAIL}--help{BColors.ENDC} or {BColors.FAIL}-h{BColors.ENDC}
+      Display this help message
+
+{BColors.HEADER}CONFIGURATION (in config.py):{BColors.ENDC}
+  FETCH_DAYS_BACK = 14              Fetch articles from last 14 days (rolling window)
+  MIN_ARTICLE_LENGTH = 100          Minimum content length in characters
+  FETCH_TIMEOUT = 30                Request timeout in seconds
+  SOCKET_TIMEOUT = 30               Socket timeout for RSS feeds
+  ENABLE_KQL_GENERATION = True      Enable/disable KQL generation feature
+  KQL_USE_LLM = True                Use LLM for IOC extraction (recommended)
+
+{BColors.HEADER}EXAMPLE WORKFLOWS:{BColors.ENDC}
+  {BColors.BOLD}1. Daily Threat Intel Gathering:{BColors.ENDC}
+     python main.py --auto-kql
+
+  {BColors.BOLD}2. Quick Test Run:{BColors.ENDC}
+     python main.py -n 10
+
+  {BColors.BOLD}3. Analyze Single Threat Article:{BColors.ENDC}
+     python main.py -s https://blog.example.com/new-ransomware --kql
+
+  {BColors.BOLD}4. Find All High-Risk Threats:{BColors.ENDC}
+     python main.py --list --risk HIGH --limit 100
+
+  {BColors.BOLD}5. Search & Export IOCs:{BColors.ENDC}
+     python main.py --search "APT" --limit 20
+     python main.py --export-iocs --type domains
+
+  {BColors.BOLD}6. Database Overview:{BColors.ENDC}
+     python main.py --stats
+
+  {BColors.BOLD}7. Review Specific Threat:{BColors.ENDC}
+     python main.py --show 15
+
+{BColors.BOLD}{'='*80}{BColors.ENDC}
+{BColors.OKCYAN}📖 For more information, see README.md or docs/ folder{BColors.ENDC}
+{BColors.BOLD}{'='*80}{BColors.ENDC}
 """
     print(help_text)
 
