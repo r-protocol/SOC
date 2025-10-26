@@ -1,9 +1,0 @@
-// Detecting Flax Typhoon Activity in ArcGIS Servers
-// Type: Behavioral_Hunt
-// Description: Identifies suspicious process creations and file operations associated with the Chinese state-sponsored hacking group Flax Typhoon.
-// MITRE ATT&CK: T1059, T1055
-
-DeviceProcessEvents
-| where ProcessName == 'arcgisserver.exe' and CommandLine contains 'flax'
-| join kind=leftouter (DeviceFileEvents | where FileName contains '.dll' or FileName contains '.exe')
-| summarize Count = count() by Timestamp, Account, DeviceName, ProcessName

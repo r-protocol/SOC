@@ -1,8 +1,0 @@
-// Detect CAPI Backdoor Infection via Phishing ZIPs
-// Type: Behavioral_Hunt
-// Description: This query detects the execution of suspicious .NET processes associated with the CAPI Backdoor malware, indicating an infection triggered by a phishing ZIP archive.
-// MITRE ATT&CK: T1059
-
-DeviceProcessEvents
-| where InitiatingProcessFileName == 'msbuild.exe' and CommandLine contains 'CAPI Backdoor'
-| summarize by DeviceName, ProcessName

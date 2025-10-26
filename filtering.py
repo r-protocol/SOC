@@ -34,10 +34,14 @@ def filter_articles_sequential(articles):
         if is_article_relevant_with_llm(article):
             relevant_articles.append(article)
             status_messages.append(f"{BColors.OKGREEN}[RELEVANT]{BColors.ENDC} {article['title']}")
-        processed_articles += 1
-        # Update progress with any new status messages
-        print_progress_bar(processed_articles, total_articles, "Filtering Articles", status_messages)
-        status_messages = []  # Clear after printing
+            # Update progress with new status message
+            processed_articles += 1
+            print_progress_bar(processed_articles, total_articles, "Filtering Articles", status_messages)
+            status_messages = []
+        else:
+            # Skip irrelevant articles silently, just update progress
+            processed_articles += 1
+            print_progress_bar(processed_articles, total_articles, "Filtering Articles", None)
     sys.stdout.write('\n')  # End progress bar line
     sys.stdout.flush()
     log_success(f"Found {len(relevant_articles)} new relevant articles to analyze.")
@@ -45,14 +49,33 @@ def filter_articles_sequential(articles):
 
 def is_article_relevant_with_llm(article):
     prompt = f"""
-You are a cybersecurity news curator. Your task is to determine if the following article is related to cybersecurity.
-Cybersecurity topics include vulnerabilities, data breaches, malware, ransomware, phishing, threat actors, cyber attacks, and security advisories.
-General technology news, such as product releases (e.g., new phones or gaming features), company financials, or general IT trends, are NOT relevant.
+You are a cybersecurity threat intelligence analyst. Determine if this article is relevant to cybersecurity and security operations.
 
-Based on the title and content, is this article about cybersecurity? Respond with only a single word: YES or NO.
+RELEVANT topics include:
+- Vulnerabilities (CVE, exploits, zero-days, patches, PoC)
+- Malware (ransomware, trojans, backdoors, infostealers, rootkits)
+- Threat actors (APT groups, nation-state hackers, cybercrime groups)
+- Security incidents (data breaches, attacks, compromises, leaks)
+- Attack techniques (phishing, DDoS, supply chain, social engineering)
+- Security tools and defenses (SIEM, EDR, firewalls, detection methods)
+- Security advisories (CISA, vendor warnings, security bulletins)
+- Network security (VPN flaws, router vulnerabilities, DNS attacks)
+- Cloud security (AWS/Azure breaches, SaaS vulnerabilities)
+- Authentication/Identity (credential theft, SSO attacks, MFA bypass)
+
+NOT RELEVANT topics include:
+- Consumer product reviews (phones, TVs, gaming consoles)
+- General tech news (company earnings, stock prices, mergers)
+- Non-security software updates (new features, UI changes)
+- Entertainment and lifestyle content
+- Shopping deals and price comparisons
+
+IMPORTANT: If the title or content mentions vulnerabilities, exploits, attacks, hackers, breaches, malware, CVE numbers, or security flaws - it IS relevant.
 
 Article Title: {article['title']}
-Article Content: {article['content'][:500]}
+Article Content: {article['content'][:1500]}
+
+Is this article relevant to cybersecurity? Answer only YES or NO.
 """
     try:
         response = requests.post(
@@ -62,6 +85,15 @@ Article Content: {article['content'][:500]}
         )
         response.raise_for_status()
         response_text = response.json()['response'].strip().upper()
-        return "YES" in response_text
-    except requests.RequestException:
+        
+        # Debug: print response if not clear YES/NO
+        if "YES" not in response_text and "NO" not in response_text:
+            print(f"\n[DEBUG] Unexpected LLM response for '{article['title'][:50]}...': {response_text[:100]}")
+        
+        # More flexible YES detection
+        is_relevant = "YES" in response_text or response_text.startswith("Y")
+        
+        return is_relevant
+    except requests.RequestException as e:
+        print(f"\n[DEBUG] LLM request failed for '{article['title'][:50]}...': {e}")
         return False

@@ -1,8 +1,0 @@
-// SIMCARTEL_SuspiciousProcesses
-// Type: Behavioral_Hunt
-// Description: Detects suspicious process creations related to the SIMCARTEL operation.
-// MITRE ATT&CK: T1059
-
-DeviceProcessEvents
-| where ProcessCommandLine contains 'simcard' or ProcessCommandLine contains 'fakeaccount'
-| summarize CountOfProcesses = count() by Timestamp, CommandLine

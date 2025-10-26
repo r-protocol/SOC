@@ -208,6 +208,7 @@ def main_pipeline():
     # Parse the -n parameter if provided
     article_limit = None
     auto_kql = False  # Check for --auto-kql flag
+    days_back = FETCH_DAYS_BACK  # Default from config
     
     if "-n" in sys.argv:
         try:
@@ -217,16 +218,25 @@ def main_pipeline():
         except (ValueError, IndexError):
             log_warn("Invalid -n parameter. Processing all articles.")
     
+    if "-t" in sys.argv:
+        try:
+            t_index = sys.argv.index("-t")
+            if t_index + 1 < len(sys.argv):
+                days_back = int(sys.argv[t_index + 1])
+                log_info(f"Using custom time window: {days_back} days")
+        except (ValueError, IndexError):
+            log_warn(f"Invalid -t parameter. Using default {FETCH_DAYS_BACK} days.")
+    
     if "--auto-kql" in sys.argv or "--kql" in sys.argv:
         auto_kql = True
 
     initialize_database()
     existing_urls = get_existing_urls()
     
-    # Use rolling 2-week window for FETCHING (not for reports)
-    fetch_start_date, fetch_end_date = get_rolling_date_range(days_back=FETCH_DAYS_BACK)
+    # Use rolling window for FETCHING (not for reports)
+    fetch_start_date, fetch_end_date = get_rolling_date_range(days_back=days_back)
     
-    log_info(f"Fetch window: {fetch_start_date} to {fetch_end_date} ({FETCH_DAYS_BACK} days)")
+    log_info(f"Fetch window: {fetch_start_date} to {fetch_end_date} ({days_back} days)")
     
     # Phase 1: Fetch and Scrape all new articles using 2-week rolling window
     log_step(1, "Fetching and Scraping New Articles")
@@ -551,6 +561,80 @@ def cmd_export_iocs(output_file="iocs_export.csv", filter_type=None):
     conn.close()
 
 
+def cmd_fetch_only():
+    """Fetch articles only without filtering or analysis"""
+    print(f"\n{BColors.BOLD}{'='*70}{BColors.ENDC}")
+    print(f"{BColors.BOLD}📥 Fetch Only Mode{BColors.ENDC}")
+    print(f"{BColors.BOLD}{'='*70}{BColors.ENDC}\n")
+    
+    # Check for -t parameter
+    days_back = FETCH_DAYS_BACK
+    if "-t" in sys.argv:
+        try:
+            t_index = sys.argv.index("-t")
+            if t_index + 1 < len(sys.argv):
+                days_back = int(sys.argv[t_index + 1])
+                log_info(f"Using custom time window: {days_back} days")
+        except (ValueError, IndexError):
+            log_warn(f"Invalid -t parameter. Using default {FETCH_DAYS_BACK} days.")
+    
+    initialize_database()
+    existing_urls = get_existing_urls()
+    
+    # Use rolling window for fetching
+    fetch_start_date, fetch_end_date = get_rolling_date_range(days_back=days_back)
+    
+    log_info(f"Fetch window: {fetch_start_date} to {fetch_end_date} ({days_back} days)")
+    
+    # Fetch articles
+    log_step(1, "Fetching Articles from RSS Feeds")
+    new_articles = fetch_and_scrape_articles_sequential(existing_urls, fetch_start_date, fetch_end_date)
+    
+    if not new_articles:
+        log_warn("No new articles found.")
+        return
+    
+    # Store raw articles in database without analysis
+    log_step(2, "Storing Raw Articles in Database")
+    
+    stored_count = 0
+    conn = sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+    
+    for article in new_articles:
+        try:
+            cursor.execute("""
+                INSERT INTO articles (title, url, published_date, content, summary, threat_risk, category, recommendations)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                article['title'],
+                article['url'],
+                article.get('published_date', datetime.date.today().isoformat()),
+                article.get('content', ''),
+                'Not analyzed - fetched only',
+                'UNANALYZED',
+                'Pending Analysis',
+                '[]'
+            ))
+            stored_count += 1
+        except sqlite3.IntegrityError:
+            # Skip duplicates
+            continue
+        except Exception as e:
+            log_error(f"Failed to store article '{article['title']}': {e}")
+    
+    conn.commit()
+    conn.close()
+    
+    log_success(f"Successfully stored {stored_count} raw articles in database")
+    log_info(f"Use 'python main.py' to analyze these articles later")
+    
+    print(f"\n{BColors.BOLD}{'='*70}{BColors.ENDC}")
+    print(f"{BColors.OKGREEN}✓{BColors.ENDC} Fetch complete! Articles are stored but not analyzed.")
+    print(f"{BColors.OKCYAN}Tip:{BColors.ENDC} Run the full pipeline to analyze these articles")
+    print(f"{BColors.BOLD}{'='*70}{BColors.ENDC}\n")
+
+
 def cmd_show_help():
     """Display help message with all available commands"""
     help_text = f"""
@@ -562,9 +646,17 @@ def cmd_show_help():
   {BColors.OKGREEN}python main.py{BColors.ENDC}
       Run full pipeline: Fetch articles (2-week window), analyze, generate report
 
+  {BColors.OKGREEN}python main.py --fetch{BColors.ENDC}
+      Fetch-only mode: Download articles from RSS feeds and store in database
+      (no filtering, no analysis, no report generation)
+
   {BColors.OKGREEN}python main.py -n <N>{BColors.ENDC}
       Limit processing to N articles (useful for testing)
       Example: python main.py -n 20
+
+  {BColors.OKGREEN}python main.py -t <DAYS>{BColors.ENDC}
+      Fetch articles from last N days (default: 14)
+      Example: python main.py -t 30 (fetch from last 30 days)
 
   {BColors.OKGREEN}python main.py --kql{BColors.ENDC} or {BColors.OKGREEN}--auto-kql{BColors.ENDC}
       Run pipeline and automatically generate KQL queries
@@ -625,6 +717,10 @@ def cmd_show_help():
   {BColors.OKBLUE}-n <N>{BColors.ENDC}
       Limit article processing to N articles
       
+  {BColors.OKBLUE}-t <DAYS>{BColors.ENDC}
+      Fetch articles from last N days (default: 14 from config)
+      Example: -t 30 for 30-day window
+      
   {BColors.OKBLUE}--limit <N>{BColors.ENDC}
       Limit search/list results to N items
       
@@ -656,23 +752,29 @@ def cmd_show_help():
   {BColors.BOLD}1. Daily Threat Intel Gathering:{BColors.ENDC}
      python main.py --auto-kql
 
-  {BColors.BOLD}2. Quick Test Run:{BColors.ENDC}
+  {BColors.BOLD}2. Quick Fetch (No Analysis):{BColors.ENDC}
+     python main.py --fetch
+
+  {BColors.BOLD}3. Fetch 30 Days of Articles:{BColors.ENDC}
+     python main.py -t 30
+
+  {BColors.BOLD}4. Quick Test Run:{BColors.ENDC}
      python main.py -n 10
 
-  {BColors.BOLD}3. Analyze Single Threat Article:{BColors.ENDC}
+  {BColors.BOLD}5. Analyze Single Threat Article:{BColors.ENDC}
      python main.py -s https://blog.example.com/new-ransomware --kql
 
-  {BColors.BOLD}4. Find All High-Risk Threats:{BColors.ENDC}
+  {BColors.BOLD}6. Find All High-Risk Threats:{BColors.ENDC}
      python main.py --list --risk HIGH --limit 100
 
-  {BColors.BOLD}5. Search & Export IOCs:{BColors.ENDC}
+  {BColors.BOLD}7. Search & Export IOCs:{BColors.ENDC}
      python main.py --search "APT" --limit 20
      python main.py --export-iocs --type domains
 
-  {BColors.BOLD}6. Database Overview:{BColors.ENDC}
+  {BColors.BOLD}8. Database Overview:{BColors.ENDC}
      python main.py --stats
 
-  {BColors.BOLD}7. Review Specific Threat:{BColors.ENDC}
+  {BColors.BOLD}9. Review Specific Threat:{BColors.ENDC}
      python main.py --show 15
 
 {BColors.BOLD}{'='*80}{BColors.ENDC}
@@ -700,6 +802,10 @@ if __name__ == "__main__":
     # Check for CLI query commands first (these don't run the pipeline)
     if "--help" in sys.argv or "-h" in sys.argv:
         cmd_show_help()
+        sys.exit(0)
+    
+    elif "--fetch" in sys.argv:
+        cmd_fetch_only()
         sys.exit(0)
     
     elif "--stats" in sys.argv:

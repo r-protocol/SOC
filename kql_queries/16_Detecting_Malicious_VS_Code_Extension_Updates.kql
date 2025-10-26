@@ -1,8 +1,0 @@
-// Detecting Malicious VS Code Extension Updates
-// Type: Behavioral_Hunt
-// Description: This query detects suspicious activity related to the unauthorized distribution of malicious Visual Studio Code extension updates.
-// MITRE ATT&CK: T1059, T1055
-
-DeviceProcessEvents
-| where ProcessCommandLine contains 'vscode-extension-updater' and not (ProcessCommandLine contains 'microsoft' or ProcessCommandLine contains 'visualstudio.com')
-| summarize Count() by Account, CommandLine

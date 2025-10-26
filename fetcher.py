@@ -82,45 +82,25 @@ def fetch_single_article(url):
 def fetch_and_scrape_articles_sequential(existing_urls, start_date, end_date):
     all_articles = []
     log_info(f"Searching for new articles from {len(RSS_FEEDS)} sources for {start_date} to {end_date} ({(end_date - start_date).days + 1} days)...")
-    total_feeds = len(RSS_FEEDS)
-    total_articles = 0
+    
+    # First pass: collect all entries and filter
+    all_entries = []
+    skipped_duplicates = 0
+    skipped_outside_range = 0
+    
     for feed_url in RSS_FEEDS:
         try:
             socket.setdefaulttimeout(SOCKET_TIMEOUT)
             feed = feedparser.parse(feed_url)
             socket.setdefaulttimeout(None)
-            total_articles += len(feed.entries)
-        except Exception:
-            continue
-    processed_articles = 0
-    progress_bar_width = 50
-    last_status_line = 0
-    def print_progress_bar(current, total, phase_desc, messages=None):
-        # First, clear the previous progress bar
-        sys.stdout.write('\r' + ' ' * 100 + '\r')  # Clear line
-        
-        # Print any new status messages
-        if messages:
-            for msg in messages:
-                print(msg)
-
-        # Print the progress bar at the bottom
-        percent = int((current / total) * 100) if total else 100
-        filled_length = int(progress_bar_width * percent // 100)
-        bar = '█' * filled_length + '-' * (progress_bar_width - filled_length)
-        sys.stdout.write(f"\r{phase_desc} |{bar}| {percent}% ({current}/{total})")
-        sys.stdout.flush()
-
-    print_progress_bar(0, total_articles, "Fetching Articles")
-    status_messages = []
-    for feed_url in RSS_FEEDS:
-        try:
-            socket.setdefaulttimeout(SOCKET_TIMEOUT)
-            feed = feedparser.parse(feed_url)
-            socket.setdefaulttimeout(None)
+            
             for entry in feed.entries:
+                # Skip duplicates immediately
                 if entry.link in existing_urls:
+                    skipped_duplicates += 1
                     continue
+                
+                # Check date
                 try:
                     published_date = entry.published_parsed
                     import datetime
@@ -128,33 +108,64 @@ def fetch_and_scrape_articles_sequential(existing_urls, start_date, end_date):
                 except Exception:
                     import datetime
                     published_date = datetime.date.today()
+                
                 if start_date <= published_date <= end_date:
-                    status_messages.append(f"{BColors.OKCYAN}[NEW]{BColors.ENDC} Fetched: {entry.title}")
-                    article_data = {'title': entry.title, 'url': entry.link, 'published_date': published_date.isoformat(), 'content': ""}
-                    if hasattr(entry, 'content') and entry.content:
-                        article_data['content'] = BeautifulSoup(entry.content[0].value, 'html.parser').get_text(strip=True)
-                    elif hasattr(entry, 'summary'):
-                        article_data['content'] = BeautifulSoup(entry.summary, 'html.parser').get_text(strip=True)
-                    if len(article_data['content']) < MIN_ARTICLE_LENGTH:
-                        try:
-                            headers = {'User-Agent': random.choice(USER_AGENTS)}
-                            response = requests.get(article_data['url'], headers=headers, timeout=FETCH_TIMEOUT)
-                            response.raise_for_status()
-                            soup = BeautifulSoup(response.content, 'html.parser')
-                            body = soup.find('article') or soup.find('div', class_='article-body')
-                            if body:
-                                article_data['content'] = body.get_text(separator='\n', strip=True)
-                        except requests.RequestException:
-                            article_data['content'] = None
-                    all_articles.append(article_data)
-                    processed_articles += 1
-                    # Update progress with any new status messages
-                    print_progress_bar(processed_articles, total_articles, "Fetching Articles", status_messages)
-                    status_messages = []  # Clear after printing
+                    all_entries.append((entry, published_date))
+                else:
+                    skipped_outside_range += 1
+                    
         except (socket.timeout, Exception) as e:
             log_warn(f"Could not process feed {feed_url}: {e}")
             socket.setdefaulttimeout(None)
-    sys.stdout.write('\n')  # End progress bar line
+    
+    log_info(f"Found {len(all_entries)} new articles (skipped {skipped_duplicates} duplicates, {skipped_outside_range} outside date range)")
+    
+    # Second pass: fetch and scrape only new articles
+    processed_articles = 0
+    progress_bar_width = 50
+    
+    def print_progress_bar(current, total, phase_desc, messages=None):
+        sys.stdout.write('\r' + ' ' * 100 + '\r')
+        if messages:
+            for msg in messages:
+                print(msg)
+        percent = int((current / total) * 100) if total else 100
+        filled_length = int(progress_bar_width * percent // 100)
+        bar = '█' * filled_length + '-' * (progress_bar_width - filled_length)
+        sys.stdout.write(f"\r{phase_desc} |{bar}| {percent}% ({current}/{total})")
+        sys.stdout.flush()
+
+    if all_entries:
+        print_progress_bar(0, len(all_entries), "Fetching Articles")
+    
+    status_messages = []
+    for entry, published_date in all_entries:
+        status_messages.append(f"{BColors.OKCYAN}[NEW]{BColors.ENDC} Fetched: {entry.title}")
+        article_data = {'title': entry.title, 'url': entry.link, 'published_date': published_date.isoformat(), 'content': ""}
+        
+        if hasattr(entry, 'content') and entry.content:
+            article_data['content'] = BeautifulSoup(entry.content[0].value, 'html.parser').get_text(strip=True)
+        elif hasattr(entry, 'summary'):
+            article_data['content'] = BeautifulSoup(entry.summary, 'html.parser').get_text(strip=True)
+        
+        if len(article_data['content']) < MIN_ARTICLE_LENGTH:
+            try:
+                headers = {'User-Agent': random.choice(USER_AGENTS)}
+                response = requests.get(article_data['url'], headers=headers, timeout=FETCH_TIMEOUT)
+                response.raise_for_status()
+                soup = BeautifulSoup(response.content, 'html.parser')
+                body = soup.find('article') or soup.find('div', class_='article-body')
+                if body:
+                    article_data['content'] = body.get_text(separator='\n', strip=True)
+            except requests.RequestException:
+                article_data['content'] = None
+        
+        all_articles.append(article_data)
+        processed_articles += 1
+        print_progress_bar(processed_articles, len(all_entries), "Fetching Articles", status_messages)
+        status_messages = []
+        
+    sys.stdout.write('\n')
     sys.stdout.flush()
     log_success(f"Found a total of {len(all_articles)} new potential articles across all feeds.")
     return all_articles

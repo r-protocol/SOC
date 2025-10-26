@@ -1,9 +1,0 @@
-// Detecting Android RATs on Devices
-// Type: Behavioral_Hunt
-// Description: Identifies suspicious processes and file operations indicative of Android Remote Administration Tools (RATs).
-// MITRE ATT&CK: T1059, T1055
-
-DeviceProcessEvents
-| where ProcessName contains 'android'
-| where CommandLine matches regex '.*rat.*'
-| summarize Count = count() by DeviceName, CommandLine

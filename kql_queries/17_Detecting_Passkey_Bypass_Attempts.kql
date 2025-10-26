@@ -1,9 +1,0 @@
-// Detecting Passkey Bypass Attempts
-// Type: Behavioral_Hunt
-// Description: Identifies suspicious processes and file operations indicative of attackers bypassing passkeys using adversary-in-the-middle (AiTM) kits.
-// MITRE ATT&CK: T1059, T1055
-
-DeviceProcessEvents
-| where CommandLine contains 'passkey' and not (ParentProcessName contains 'chrome' or ParentProcessName contains 'firefox')
-| summarize CountOfProcesses = count() by ProcessName, CommandLine
-| order by CountOfProcesses desc

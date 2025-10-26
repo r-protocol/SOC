@@ -102,10 +102,22 @@ Required JSON structure:
 }}
 
 THREAT RISK DEFINITIONS:
-- HIGH: Active exploitation, critical vulnerability, major breach, widespread malware. Immediate action required.
-- MEDIUM: Disclosed vulnerability (not widely exploited), smaller breach, new malware variant. Timely review needed.
-- LOW: Minor vulnerability, theoretical attack, niche product advisory. Monitor only.
-- INFORMATIONAL: General news, trends, opinions. No direct threat. Awareness only.
+- HIGH: Active exploitation in the wild, critical CVE (9.0+), ransomware attacks, major data breaches affecting millions, zero-day exploits being used. Immediate action required.
+- MEDIUM: Newly disclosed vulnerabilities (patches available), targeted attacks on specific sectors, moderate data breaches, emerging malware families, security tool updates. Timely review needed.
+- LOW: Vulnerabilities in niche/uncommon software, theoretical attacks (no known exploitation), security advisories for outdated products, minor security issues with easy workarounds. Monitor only.
+- INFORMATIONAL: Security awareness articles, best practices guides, tool announcements, industry trends, conference coverage, opinion pieces, product launches without security implications. Educational value only.
+
+IMPORTANT: Not everything is HIGH risk! Use a balanced distribution:
+- Conference results (Pwn2Own) = INFORMATIONAL or LOW
+- General security awareness = INFORMATIONAL  
+- Tool announcements = INFORMATIONAL
+- Vendor blog posts about their products = INFORMATIONAL
+- Best practices guides = INFORMATIONAL
+- Minor vulnerabilities with mitigations = LOW
+- Theoretical attacks = LOW
+- Phishing campaigns (routine) = MEDIUM
+- New malware variants = MEDIUM
+- Only active widespread exploitation = HIGH
 
 ARTICLE TO ANALYZE:
 Title: {article['title']}
