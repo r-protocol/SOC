@@ -1,0 +1,49 @@
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+
+const API_BASE = 'http://localhost:5000/api';
+
+function IOCStats() {
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    axios.get(`${API_BASE}/ioc-stats`)
+      .then(res => {
+        const formatted = [
+          { name: 'Domains', count: res.data.domains, fill: '#4285f4' },
+          { name: 'IPs', count: res.data.ips, fill: '#34a853' },
+          { name: 'Hashes', count: res.data.hashes, fill: '#ff6d01' },
+          { name: 'CVEs', count: res.data.cves, fill: '#ea4335' }
+        ];
+        setData(formatted);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error(err);
+        setLoading(false);
+      });
+  }, []);
+
+  if (loading) return <div className="card loading">Loading IOC stats...</div>;
+
+  return (
+    <div className="card">
+      <div className="card-title">🎯 IOC Breakdown</div>
+      <ResponsiveContainer width="100%" height={300}>
+        <BarChart data={data} layout="vertical">
+          <CartesianGrid strokeDasharray="3 3" stroke="#3f3f55" />
+          <XAxis type="number" stroke="#a1a1aa" />
+          <YAxis type="category" dataKey="name" stroke="#a1a1aa" />
+          <Tooltip 
+            contentStyle={{ backgroundColor: '#2a2a3e', border: '1px solid #3f3f55' }}
+          />
+          <Bar dataKey="count" fill="#4285f4" radius={[0, 8, 8, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+export default IOCStats;
