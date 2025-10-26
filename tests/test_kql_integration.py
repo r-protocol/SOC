@@ -1,6 +1,11 @@
 import sqlite3
-from kql_generator import IOCExtractor, KQLQueryGenerator
-from db_utils import store_iocs, store_kql_queries
+import sys
+import os
+# Add parent directory to path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from src.core.kql_generator import IOCExtractor, KQLQueryGenerator
+from src.utils.db_utils import store_iocs, store_kql_queries
 
 # Connect to database
 conn = sqlite3.connect('threat_intel.db')

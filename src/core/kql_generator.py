@@ -8,7 +8,7 @@ Supports: Microsoft Sentinel, Microsoft Defender, Azure Log Analytics
 import re
 import json
 from typing import Dict, List, Optional, Tuple
-from logging_utils import log_info, log_success, log_warn, log_error, BColors
+from src.utils.logging_utils import log_info, log_success, log_warn, log_error, BColors
 
 # ============================================================================
 # PHASE 1: IOC EXTRACTION

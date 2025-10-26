@@ -1,5 +1,10 @@
-from fetcher import fetch_single_article
-from kql_generator import IOCExtractor
+import sys
+import os
+# Add parent directory to path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from src.core.fetcher import fetch_single_article
+from src.core.kql_generator import IOCExtractor
 
 url = "https://www.bleepingcomputer.com/news/security/cisa-updates-conti-ransomware-alert-with-nearly-100-domain-names/"
 article = fetch_single_article(url)

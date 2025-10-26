@@ -6,8 +6,8 @@ import socket
 import sys
 import datetime
 from bs4 import BeautifulSoup
-from config import RSS_FEEDS, MIN_ARTICLE_LENGTH, FETCH_TIMEOUT, SOCKET_TIMEOUT
-from logging_utils import log_info, log_success, log_warn, log_error, BColors
+from src.config import RSS_FEEDS, MIN_ARTICLE_LENGTH, FETCH_TIMEOUT, SOCKET_TIMEOUT
+from src.utils.logging_utils import log_info, log_success, log_warn, log_error, BColors
 
 USER_AGENTS = [
     'Mozilla/50.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36',

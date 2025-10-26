@@ -366,36 +366,60 @@ Export .kql Files
 
 ```
 ThreatIntelligence/PY/
-├── analysis.py              # LLM-based article analysis
-├── config.py                # Configuration settings
-├── db_utils.py              # Database operations
-├── fetcher.py               # RSS feed fetching and scraping
-├── filtering.py             # Article relevance filtering
-├── kql_generator.py         # Regex-based IOC extraction
-├── kql_generator_llm.py     # LLM-based IOC extraction & KQL generation
-├── logging_utils.py         # Colored logging utilities
 ├── main.py                  # Main pipeline orchestration
-├── report.py                # Word report generation
 ├── requirements.txt         # Python dependencies
-├── template.docx            # Report template
+├── start_dashboard.bat      # Dashboard launcher
 ├── threat_intel.db          # SQLite database
-├── README.md                # This file
 │
-├── docs/                    # 📚 Documentation
-│   ├── README.md           # Documentation index
-│   ├── CHANGELOG.md        # Version history
-│   ├── LLM_KQL_IMPLEMENTATION.md
-│   ├── KQL_LLM_VS_REGEX.md
-│   ├── SINGLE_ARTICLE_MODE.md
-│   └── ... more docs
+├── src/                     # 📦 Source code
+│   ├── config.py           # Configuration settings
+│   ├── core/               # Core application modules
+│   │   ├── analysis.py     # LLM-based article analysis
+│   │   ├── fetcher.py      # RSS feed fetching and scraping
+│   │   ├── filtering.py    # Article relevance filtering
+│   │   ├── kql_generator.py        # Regex-based IOC extraction
+│   │   ├── kql_generator_llm.py    # LLM-based IOC extraction & KQL generation
+│   │   └── report.py       # Word report generation
+│   └── utils/              # Utility modules
+│       ├── db_utils.py     # Database operations
+│       └── logging_utils.py # Colored logging utilities
+│
+├── scripts/                 # 🔧 Utility scripts
+│   ├── analyze_unanalyzed.py       # Process unanalyzed articles
+│   ├── reprocess_not_relevant.py   # Reprocess filtered articles
+│   ├── check_categorization.py     # Check article categories
+│   ├── check_db.py                 # Database inspection
+│   ├── check_high.py               # View high-risk articles
+│   ├── check_low_info.py           # Check low-info articles
+│   └── fix_crowdstrike_articles.py # Fix specific articles
 │
 ├── tests/                   # 🧪 Test scripts
 │   ├── README.md           # Test documentation
-│   ├── test_ioc_extraction.py
-│   └── test_kql_integration.py
+│   ├── test_ioc_extraction.py      # Test IOC extraction
+│   ├── test_kql_integration.py     # Test KQL integration
+│   ├── test_filter_improvement.py  # Test filtering improvements
+│   ├── test_improved_filter.py     # Test improved filter
+│   ├── test_keyword_filter.py      # Test keyword filtering
+│   └── test_new_prompt.py          # Test new prompts
 │
-└── kql_queries/            # 📊 Generated KQL queries
-    └── *.kql
+├── dashboard/              # 📊 Web dashboard
+│   ├── backend/           # Flask API
+│   │   ├── app.py
+│   │   ├── database.py
+│   │   └── routes.py
+│   └── frontend/          # React UI
+│       └── src/
+│
+├── docs/                   # 📚 Documentation
+│   ├── README.md          # Documentation index
+│   ├── CHANGELOG.md       # Version history
+│   └── ... (various documentation files)
+│
+├── kql_queries/           # 📊 Generated KQL queries
+│   └── *.kql
+│
+└── archive/               # 🗄️ Archived/deprecated files
+    └── (old debug files, obsolete scripts)
 ```
 
 ## 📚 Documentation

@@ -8,11 +8,11 @@ import requests
 import json
 import re
 from typing import Dict, List, Optional
-from config import OLLAMA_MODEL, OLLAMA_HOST
-from logging_utils import log_info, log_success, log_warn, log_error, BColors
+from src.config import OLLAMA_MODEL, OLLAMA_HOST
+from src.utils.logging_utils import log_info, log_success, log_warn, log_error, BColors
 
 # Import regex-based extractor as fallback
-from kql_generator import IOCExtractor as RegexIOCExtractor, KQLQueryGenerator as TemplateGenerator
+from src.core.kql_generator import IOCExtractor as RegexIOCExtractor, KQLQueryGenerator as TemplateGenerator
 
 
 class LLMKQLGenerator:

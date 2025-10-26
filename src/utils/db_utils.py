@@ -1,8 +1,8 @@
 # db_utils.py
 import sqlite3
 import os
-from config import DATABASE_PATH
-from logging_utils import log_success, log_error
+from src.config import DATABASE_PATH
+from src.utils.logging_utils import log_success, log_error
 
 def initialize_database():
     conn = sqlite3.connect(DATABASE_PATH)

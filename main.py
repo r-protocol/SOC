@@ -2,15 +2,15 @@
 import sys
 import datetime
 import sqlite3
-from db_utils import initialize_database, get_existing_urls, store_analyzed_data, store_iocs, store_kql_queries
-from fetcher import fetch_and_scrape_articles_sequential, fetch_single_article
-from filtering import filter_articles_sequential
-from analysis import analyze_articles_sequential
-from report import generate_weekly_report, get_last_full_week_dates
-from logging_utils import log_step, log_warn, log_info, log_success, log_error, BColors
-from config import ENABLE_KQL_GENERATION, KQL_EXPORT_DIR, KQL_EXPORT_ENABLED, DATABASE_PATH, FETCH_DAYS_BACK
-from kql_generator_llm import LLMKQLGenerator
-from kql_generator import save_queries_to_file, IOCExtractor as RegexIOCExtractor
+from src.utils.db_utils import initialize_database, get_existing_urls, store_analyzed_data, store_iocs, store_kql_queries
+from src.core.fetcher import fetch_and_scrape_articles_sequential, fetch_single_article
+from src.core.filtering import filter_articles_sequential
+from src.core.analysis import analyze_articles_sequential
+from src.core.report import generate_weekly_report, get_last_full_week_dates
+from src.utils.logging_utils import log_step, log_warn, log_info, log_success, log_error, BColors
+from src.config import ENABLE_KQL_GENERATION, KQL_EXPORT_DIR, KQL_EXPORT_ENABLED, DATABASE_PATH, FETCH_DAYS_BACK
+from src.core.kql_generator_llm import LLMKQLGenerator
+from src.core.kql_generator import save_queries_to_file, IOCExtractor as RegexIOCExtractor
 
 
 def get_rolling_date_range(days_back=14):
@@ -21,7 +21,7 @@ def get_rolling_date_range(days_back=14):
 
 def generate_kql_for_articles(article_ids):
     """Generate KQL queries for analyzed articles using LLM"""
-    from logging_utils import BColors
+    from src.utils.logging_utils import BColors
     
     log_step("KQL", "Generating KQL Threat Hunting Queries (LLM-Enhanced)")
     llm_generator = LLMKQLGenerator()
@@ -561,6 +561,209 @@ def cmd_export_iocs(output_file="iocs_export.csv", filter_type=None):
     conn.close()
 
 
+def cmd_export_articles(output_file="articles_export.csv", filter_risk=None, filter_category=None):
+    """Export articles to CSV file"""
+    import csv
+    
+    conn = sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+    
+    # Build query with filters
+    query = """
+        SELECT id, title, url, published_date, threat_risk, category, summary
+        FROM articles
+    """
+    where_clauses = []
+    params = []
+    
+    if filter_risk:
+        where_clauses.append("threat_risk = ?")
+        params.append(filter_risk.upper())
+    
+    if filter_category:
+        where_clauses.append("category = ?")
+        params.append(filter_category)
+    
+    if where_clauses:
+        query += " WHERE " + " AND ".join(where_clauses)
+    
+    query += " ORDER BY published_date DESC"
+    
+    cursor.execute(query, params)
+    articles = cursor.fetchall()
+    
+    if not articles:
+        print(f"\n{BColors.WARNING}No articles found to export.{BColors.ENDC}\n")
+        conn.close()
+        return
+    
+    with open(output_file, 'w', newline='', encoding='utf-8') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(['ID', 'Title', 'URL', 'Published Date', 'Risk Level', 'Category', 'Summary'])
+        writer.writerows(articles)
+    
+    print(f"\n{BColors.OKGREEN}✓{BColors.ENDC} Exported {len(articles)} articles to '{output_file}'\n")
+    conn.close()
+
+
+def cmd_analyze_unanalyzed():
+    """Analyze articles in database that haven't been analyzed yet"""
+    print(f"\n{BColors.BOLD}{'='*70}{BColors.ENDC}")
+    print(f"{BColors.BOLD}🔬 Analyze Unanalyzed Articles Mode{BColors.ENDC}")
+    print(f"{BColors.BOLD}{'='*70}{BColors.ENDC}\n")
+    
+    conn = sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+    
+    # Check for article limit
+    article_limit = None
+    if "-n" in sys.argv:
+        try:
+            n_index = sys.argv.index("-n")
+            if n_index + 1 < len(sys.argv):
+                article_limit = int(sys.argv[n_index + 1])
+                log_info(f"Processing limit: {article_limit} articles")
+        except (ValueError, IndexError):
+            log_warn("Invalid -n parameter. Processing all unanalyzed articles.")
+    
+    # Query for unanalyzed articles
+    log_step(1, "Finding Unanalyzed Articles")
+    
+    query = """
+        SELECT id, title, url, published_date, content
+        FROM articles
+        WHERE threat_risk = 'UNANALYZED' OR category = 'Pending Analysis'
+        ORDER BY published_date DESC
+    """
+    
+    if article_limit:
+        query += f" LIMIT {article_limit}"
+    
+    cursor.execute(query)
+    unanalyzed_rows = cursor.fetchall()
+    conn.close()
+    
+    if not unanalyzed_rows:
+        log_info("No unanalyzed articles found in database.")
+        print(f"\n{BColors.OKGREEN}✓{BColors.ENDC} All articles are already analyzed!")
+        print(f"{BColors.OKCYAN}Tip:{BColors.ENDC} Use 'python main.py --fetch' to fetch new articles\n")
+        return
+    
+    log_success(f"Found {len(unanalyzed_rows)} unanalyzed articles")
+    
+    # Convert DB rows to article format
+    articles_to_analyze = []
+    for row in unanalyzed_rows:
+        article_id, title, url, published_date, content = row
+        articles_to_analyze.append({
+            'id': article_id,
+            'title': title,
+            'url': url,
+            'published_date': published_date,
+            'content': content
+        })
+    
+    # Step 2: Filter for relevance
+    log_step(2, "Filtering Articles for Cybersecurity Relevance")
+    relevant_articles = filter_articles_sequential(articles_to_analyze)
+    
+    if not relevant_articles:
+        log_warn("None of the unanalyzed articles are relevant to cybersecurity.")
+        # Mark them as not relevant in DB
+        conn = sqlite3.connect(DATABASE_PATH)
+        cursor = conn.cursor()
+        for article in articles_to_analyze:
+            cursor.execute("""
+                UPDATE articles
+                SET threat_risk = 'NOT_RELEVANT',
+                    category = 'Not Cybersecurity Related',
+                    summary = 'Filtered out - not relevant to cybersecurity'
+                WHERE id = ?
+            """, (article['id'],))
+        conn.commit()
+        conn.close()
+        log_info("Marked articles as not relevant in database.")
+        return
+    
+    log_success(f"{len(relevant_articles)} articles are relevant for analysis")
+    
+    # Step 3: Analyze with LLM
+    log_step(3, "Analyzing Articles with LLM")
+    analyzed_articles = analyze_articles_sequential(relevant_articles)
+    
+    if not analyzed_articles:
+        log_error("Failed to analyze articles.")
+        return
+    
+    # Step 4: Update database with analysis results
+    log_step(4, "Updating Database with Analysis Results")
+    
+    import json
+    conn = sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+    updated_count = 0
+    article_ids = []
+    
+    for article in analyzed_articles:
+        try:
+            recommendations_json = json.dumps(article.get('recommendations', []))
+            cursor.execute("""
+                UPDATE articles
+                SET summary = ?,
+                    threat_risk = ?,
+                    category = ?,
+                    recommendations = ?
+                WHERE id = ?
+            """, (
+                article.get('summary', 'N/A'),
+                article.get('threat_risk', 'UNKNOWN'),
+                article.get('category', 'Unknown'),
+                recommendations_json,
+                article['id']
+            ))
+            updated_count += 1
+            article_ids.append((article['id'], article))
+        except sqlite3.Error as e:
+            log_error(f"Failed to update article ID {article['id']}: {e}")
+    
+    conn.commit()
+    conn.close()
+    
+    log_success(f"Updated {updated_count} articles in database")
+    
+    # Display summary
+    print(f"\n{BColors.BOLD}{'='*70}{BColors.ENDC}")
+    print(f"{BColors.BOLD}📊 Analysis Summary{BColors.ENDC}")
+    print(f"{BColors.BOLD}{'='*70}{BColors.ENDC}")
+    
+    risk_counts = {}
+    for article in analyzed_articles:
+        risk = article.get('threat_risk', 'UNKNOWN')
+        risk_counts[risk] = risk_counts.get(risk, 0) + 1
+    
+    for risk, count in sorted(risk_counts.items()):
+        risk_color = {
+            'HIGH': BColors.FAIL,
+            'MEDIUM': BColors.WARNING,
+            'LOW': BColors.OKGREEN,
+            'INFORMATIONAL': BColors.OKBLUE
+        }.get(risk, BColors.ENDC)
+        print(f"  {risk_color}{risk:15}{BColors.ENDC}: {count}")
+    
+    print(f"{BColors.BOLD}{'='*70}{BColors.ENDC}\n")
+    
+    # Optional: Generate KQL queries
+    auto_kql = "--kql" in sys.argv or "--auto-kql" in sys.argv
+    
+    if ENABLE_KQL_GENERATION and article_ids:
+        if auto_kql or prompt_kql_generation():
+            generate_kql_for_articles(article_ids)
+        else:
+            log_info("KQL generation skipped by user.")
+    
+    log_success("Analysis complete!")
+
+
 def cmd_fetch_only():
     """Fetch articles only without filtering or analysis"""
     print(f"\n{BColors.BOLD}{'='*70}{BColors.ENDC}")
@@ -627,11 +830,11 @@ def cmd_fetch_only():
     conn.close()
     
     log_success(f"Successfully stored {stored_count} raw articles in database")
-    log_info(f"Use 'python main.py' to analyze these articles later")
+    log_info(f"Use 'python main.py --analyze' to analyze these articles later")
     
     print(f"\n{BColors.BOLD}{'='*70}{BColors.ENDC}")
     print(f"{BColors.OKGREEN}✓{BColors.ENDC} Fetch complete! Articles are stored but not analyzed.")
-    print(f"{BColors.OKCYAN}Tip:{BColors.ENDC} Run the full pipeline to analyze these articles")
+    print(f"{BColors.OKCYAN}Tip:{BColors.ENDC} Run 'python main.py --analyze' to analyze these articles")
     print(f"{BColors.BOLD}{'='*70}{BColors.ENDC}\n")
 
 
@@ -650,16 +853,23 @@ def cmd_show_help():
       Fetch-only mode: Download articles from RSS feeds and store in database
       (no filtering, no analysis, no report generation)
 
+  {BColors.OKGREEN}python main.py --analyze{BColors.ENDC}
+      Analyze-only mode: Process articles in database that are not yet analyzed
+      (useful after using --fetch, or when analysis previously failed)
+
   {BColors.OKGREEN}python main.py -n <N>{BColors.ENDC}
       Limit processing to N articles (useful for testing)
       Example: python main.py -n 20
+      Works with: main pipeline, --fetch, --analyze
 
   {BColors.OKGREEN}python main.py -t <DAYS>{BColors.ENDC}
       Fetch articles from last N days (default: 14)
       Example: python main.py -t 30 (fetch from last 30 days)
+      Works with: main pipeline, --fetch
 
   {BColors.OKGREEN}python main.py --kql{BColors.ENDC} or {BColors.OKGREEN}--auto-kql{BColors.ENDC}
       Run pipeline and automatically generate KQL queries
+      Works with: main pipeline, --analyze, single article mode
 
   {BColors.OKGREEN}python main.py -s <URL>{BColors.ENDC} or {BColors.OKGREEN}--source <URL>{BColors.ENDC}
       Process a single article from URL (fetch, analyze, store)
@@ -701,6 +911,22 @@ def cmd_show_help():
       Show database statistics and threat insights
 
 {BColors.HEADER}EXPORT COMMANDS:{BColors.ENDC}
+  {BColors.WARNING}--export-articles{BColors.ENDC}
+      Export all articles to CSV file (default: articles_export.csv)
+      Example: python main.py --export-articles
+
+  {BColors.WARNING}--export-articles --output <file>{BColors.ENDC}
+      Export articles to custom filename
+      Example: python main.py --export-articles --output my_articles.csv
+
+  {BColors.WARNING}--export-articles --risk <LEVEL>{BColors.ENDC}
+      Export only articles with specific risk level
+      Example: python main.py --export-articles --risk HIGH
+
+  {BColors.WARNING}--export-articles --category <NAME>{BColors.ENDC}
+      Export only articles from specific category
+      Example: python main.py --export-articles --category Ransomware
+
   {BColors.WARNING}--export-iocs{BColors.ENDC}
       Export all IOCs to CSV file (default: iocs_export.csv)
       Example: python main.py --export-iocs
@@ -752,29 +978,37 @@ def cmd_show_help():
   {BColors.BOLD}1. Daily Threat Intel Gathering:{BColors.ENDC}
      python main.py --auto-kql
 
-  {BColors.BOLD}2. Quick Fetch (No Analysis):{BColors.ENDC}
+  {BColors.BOLD}2. Fetch Now, Analyze Later:{BColors.ENDC}
+     python main.py --fetch         # Fetch articles during work hours
+     python main.py --analyze --kql # Analyze them later (evenings/weekends)
+
+  {BColors.BOLD}3. Quick Fetch (No Analysis):{BColors.ENDC}
      python main.py --fetch
 
-  {BColors.BOLD}3. Fetch 30 Days of Articles:{BColors.ENDC}
+  {BColors.BOLD}4. Batch Fetch & Selective Analysis:{BColors.ENDC}
+     python main.py --fetch -t 30   # Fetch 30 days of articles
+     python main.py --analyze -n 50 # Analyze 50 most recent unanalyzed
+
+  {BColors.BOLD}5. Fetch 30 Days of Articles:{BColors.ENDC}
      python main.py -t 30
 
-  {BColors.BOLD}4. Quick Test Run:{BColors.ENDC}
+  {BColors.BOLD}6. Quick Test Run:{BColors.ENDC}
      python main.py -n 10
 
-  {BColors.BOLD}5. Analyze Single Threat Article:{BColors.ENDC}
+  {BColors.BOLD}7. Analyze Single Threat Article:{BColors.ENDC}
      python main.py -s https://blog.example.com/new-ransomware --kql
 
-  {BColors.BOLD}6. Find All High-Risk Threats:{BColors.ENDC}
+  {BColors.BOLD}8. Find All High-Risk Threats:{BColors.ENDC}
      python main.py --list --risk HIGH --limit 100
 
-  {BColors.BOLD}7. Search & Export IOCs:{BColors.ENDC}
+  {BColors.BOLD}9. Search & Export IOCs:{BColors.ENDC}
      python main.py --search "APT" --limit 20
      python main.py --export-iocs --type domains
 
-  {BColors.BOLD}8. Database Overview:{BColors.ENDC}
+  {BColors.BOLD}10. Database Overview:{BColors.ENDC}
      python main.py --stats
 
-  {BColors.BOLD}9. Review Specific Threat:{BColors.ENDC}
+  {BColors.BOLD}11. Review Specific Threat:{BColors.ENDC}
      python main.py --show 15
 
 {BColors.BOLD}{'='*80}{BColors.ENDC}
@@ -806,6 +1040,10 @@ if __name__ == "__main__":
     
     elif "--fetch" in sys.argv:
         cmd_fetch_only()
+        sys.exit(0)
+    
+    elif "--analyze" in sys.argv:
+        cmd_analyze_unanalyzed()
         sys.exit(0)
     
     elif "--stats" in sys.argv:
@@ -844,6 +1082,13 @@ if __name__ == "__main__":
         output_file = get_arg_value("--output", "iocs_export.csv")
         filter_type = get_arg_value("--type")
         cmd_export_iocs(output_file=output_file, filter_type=filter_type)
+        sys.exit(0)
+    
+    elif "--export-articles" in sys.argv:
+        output_file = get_arg_value("--output", "articles_export.csv")
+        risk_filter = get_arg_value("--risk")
+        category_filter = get_arg_value("--category")
+        cmd_export_articles(output_file=output_file, filter_risk=risk_filter, filter_category=category_filter)
         sys.exit(0)
     
     # Check for single article processing mode

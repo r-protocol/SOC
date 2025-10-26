@@ -6,8 +6,8 @@ from docx.shared import Pt, RGBColor, Inches
 from docx.oxml import OxmlElement, ns
 from docx.oxml.ns import qn
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from config import DATABASE_PATH, TEMPLATE_DOCX_PATH, OUTPUT_DOCX_PATH
-from logging_utils import log_info, log_success, log_warn, log_error
+from src.config import DATABASE_PATH, TEMPLATE_DOCX_PATH, OUTPUT_DOCX_PATH
+from src.utils.logging_utils import log_info, log_success, log_warn, log_error
 
 def get_last_full_week_dates():
     import datetime

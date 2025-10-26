@@ -1,0 +1,14 @@
+
+
+=== FAILED: Anthropic Has a Plan to Keep Its AI From Building a Nuclear Weapon. Will It Work? ===
+Error: Expecting ',' delimiter: line 12 column 1 (char 1992)
+JSON attempt:
+{
+  "summary": "Anthropic, a prominent artificial intelligence company, has recently announced plans to implement a sophisticated filter system designed to prevent its AI model, Claude, from assisting in the development of nuclear weapons. This initiative is part of an ongoing effort by the US government and private sector to ensure that advanced AI technologies are not misused for harmful purposes. The partnership between Anthropic and the US government aims to develop a robust filtering mechan...
+
+
+=== FAILED: New LockBit Ransomware Victims Identified by Security Researchers ===
+Error: Expecting ',' delimiter: line 12 column 1 (char 2069)
+JSON attempt:
+{
+  "summary": "The recent discovery by security researchers at Check Point indicates an increase in LockBit ransomware attacks during September. These attacks have been identified through a dozen instances where the malware was deployed, with over half of these incidents attributed to the group's most recent ransomware version. This surge highlights the continued threat posed by ransomware gangs, emphasizing the need for robust cybersecurity measures and incident response strategies across vari...

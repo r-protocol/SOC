@@ -3,8 +3,8 @@ import requests
 import json
 import re
 import sys
-from config import OLLAMA_MODEL, OLLAMA_HOST
-from logging_utils import BColors
+from src.config import OLLAMA_MODEL, OLLAMA_HOST
+from src.utils.logging_utils import BColors
 
 def repair_and_parse_json(raw_text, debug_title=None):
     """Enhanced JSON repair with multiple strategies"""
@@ -101,27 +101,111 @@ Required JSON structure:
   ]
 }}
 
-THREAT RISK DEFINITIONS:
-- HIGH: Active exploitation in the wild, critical CVE (9.0+), ransomware attacks, major data breaches affecting millions, zero-day exploits being used. Immediate action required.
-- MEDIUM: Newly disclosed vulnerabilities (patches available), targeted attacks on specific sectors, moderate data breaches, emerging malware families, security tool updates. Timely review needed.
-- LOW: Vulnerabilities in niche/uncommon software, theoretical attacks (no known exploitation), security advisories for outdated products, minor security issues with easy workarounds. Monitor only.
-- INFORMATIONAL: Security awareness articles, best practices guides, tool announcements, industry trends, conference coverage, opinion pieces, product launches without security implications. Educational value only.
+===== CRITICAL: THREAT RISK CLASSIFICATION RULES =====
 
-IMPORTANT: Not everything is HIGH risk! Use a balanced distribution:
-- Conference results (Pwn2Own) = INFORMATIONAL or LOW
-- General security awareness = INFORMATIONAL  
-- Tool announcements = INFORMATIONAL
-- Vendor blog posts about their products = INFORMATIONAL
-- Best practices guides = INFORMATIONAL
-- Minor vulnerabilities with mitigations = LOW
-- Theoretical attacks = LOW
-- Phishing campaigns (routine) = MEDIUM
-- New malware variants = MEDIUM
-- Only active widespread exploitation = HIGH
+YOU MUST BE CONSERVATIVE WITH RISK RATINGS. Most security content is INFORMATIONAL or LOW, not HIGH!
+
+** HIGH RISK - ONLY if ALL of these are true: **
+✓ Active exploitation happening RIGHT NOW in the wild
+✓ Affects widely-used systems (Windows, major cloud platforms, popular enterprise software)
+✓ Has confirmed victim organizations or widespread impact
+✓ Critical CVSS score (9.0+) AND actively exploited (not just disclosed)
+✓ Ransomware attacks with active campaigns currently targeting organizations
+✓ Major breach with millions of records stolen and confirmed harm
+
+EXAMPLES OF HIGH:
+- "CVE-2025-59287 WSUS flaw under ACTIVE ATTACK" (critical CVE + active exploitation)
+- "Ransomware group encrypts 500 organizations this week" (active widespread attack)
+- "Zero-day in Chrome actively exploited by state actors" (widespread software + active exploitation)
+
+** MEDIUM RISK - Requires attention but not urgent: **
+✓ Newly disclosed vulnerabilities WITH patches available (not yet exploited)
+✓ Targeted attacks on specific industry sectors (not widespread)
+✓ New malware families discovered (but not yet widespread)
+✓ Data breaches affecting thousands (not millions)
+✓ Security tool updates and advisories
+✓ Phishing campaigns (routine/ongoing, not massive scale)
+
+EXAMPLES OF MEDIUM:
+- "New vulnerability patched in Microsoft Exchange" (patch available, no exploitation)
+- "Phishing campaign targets healthcare sector" (targeted, not widespread)
+- "New banking trojan discovered in limited attacks" (emerging, not widespread)
+
+** LOW RISK - Monitor only, minimal threat: **
+✓ Vulnerabilities in niche/uncommon software (e.g., specific IoT devices, obscure apps)
+✓ Theoretical attacks with NO known exploitation
+✓ Security advisories for old/deprecated products
+✓ Minor issues with easy workarounds or low impact
+✓ Failed exploit attempts (e.g., "hack attempt unsuccessful")
+✓ Bugs found but deemed low severity by vendors
+
+EXAMPLES OF LOW:
+- "$1M WhatsApp Hack Flops: Only Low-Risk Bugs" (failed hack, low-risk bugs)
+- "Theoretical attack requires physical access to device" (theoretical + impractical)
+- "Vulnerability in legacy system no longer supported" (old software, low impact)
+
+** INFORMATIONAL - Educational content, NO direct threat: **
+✓ Conference coverage (Pwn2Own, Black Hat, DEF CON, etc.) - These are demonstrations, NOT active threats!
+✓ Vendor product announcements and marketing content
+✓ Security awareness articles and best practices guides
+✓ Tool releases and feature announcements
+✓ Industry trends, statistics, and reports
+✓ Opinion pieces and thought leadership
+✓ Awards, certifications, and company recognitions
+✓ Podcast episodes and newsletter roundups
+✓ Research papers without immediate exploits
+
+EXAMPLES OF INFORMATIONAL:
+- "Hackers earn $1M at Pwn2Own for 73 zero-days" (conference demo, controlled environment)
+- "Company X releases new security product" (product announcement)
+- "Best practices for securing cloud infrastructure" (educational guide)
+- "Security newsletter round-up" (news aggregation)
+- "ISC Stormcast podcast episode" (podcast/educational)
+- "Company named leader in Gartner Magic Quadrant" (award/recognition)
+- "Conference announces speakers for next year" (event announcement)
+- "MALWARE NEWSLETTER ROUND" (newsletter aggregation)
+- "Security Affairs newsletter" (newsletter compilation)
+- "Weekly threat intelligence digest" (news roundup)
+
+===== EXPLICIT DO NOT CLASSIFY AS HIGH =====
+❌ Conference demonstrations (Pwn2Own, Black Hat, etc.) → INFORMATIONAL
+❌ Vendor blog posts about their own products → INFORMATIONAL
+❌ Newsletter roundups and digests (titles with "newsletter", "roundup", "round", "digest") → INFORMATIONAL
+❌ Podcast episodes (ISC Stormcast, etc.) → INFORMATIONAL
+❌ Patches released BEFORE exploitation → MEDIUM (not HIGH)
+❌ Theoretical vulnerabilities with no exploitation → LOW
+❌ Failed hack attempts → LOW
+❌ Educational content and guides → INFORMATIONAL
+❌ Industry reports and statistics → INFORMATIONAL
+❌ Company/product announcements → INFORMATIONAL
+❌ Awards and certifications → INFORMATIONAL
+
+===== SPECIAL RULE FOR NEWSLETTERS =====
+⚠️ CRITICAL: If the title contains "newsletter", "roundup", "round", "digest", "weekly wrap", "Stormcast", or similar aggregation terms:
+→ MUST classify as INFORMATIONAL (these are compilations/summaries of multiple news items, not individual actionable threats)
+→ These are for awareness only, not for immediate action
+
+===== REMEMBER =====
+Ask yourself: "Is this an ACTIVE, WIDESPREAD threat happening RIGHT NOW that requires IMMEDIATE action?"
+- If NO → It's probably INFORMATIONAL, LOW, or at most MEDIUM
+- If YES → Then check if it meets ALL criteria for HIGH
+
+Step 1: Check the title first:
+- Does it contain "newsletter", "roundup", "round", "Pwn2Own", "podcast", "Stormcast", "digest"? → INFORMATIONAL
+- Does it mention "conference", "award", "leader", "magic quadrant", "announcement"? → INFORMATIONAL
+- Does it say "best practices", "guide", "tips", "how to"? → INFORMATIONAL
+
+Step 2: Only if title doesn't match above, assess the actual threat level.
+
+EXPECTED DISTRIBUTION in a typical week:
+- INFORMATIONAL: 30-40% (most content is educational/news)
+- LOW: 20-30% (many minor issues)
+- MEDIUM: 25-35% (standard security updates)
+- HIGH: 5-15% (only truly critical active threats)
 
 ARTICLE TO ANALYZE:
 Title: {article['title']}
-Content: {article['content'][:8000]}
+Content: {(article.get('content') or '')[:8000]}
 
 RESPOND WITH JSON ONLY:"""
 
@@ -136,8 +220,8 @@ RESPOND WITH JSON ONLY:"""
                     "prompt": prompt, 
                     "stream": False,
                     "options": {
-                        "temperature": 0.3,  # Lower = more consistent
-                        "top_p": 0.9
+                        "temperature": 0.1,  # Very low = more conservative and consistent
+                        "top_p": 0.85
                     }
                 },
                 timeout=300
