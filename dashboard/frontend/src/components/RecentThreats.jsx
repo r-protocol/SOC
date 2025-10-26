@@ -37,7 +37,7 @@ function RecentThreats() {
       <div className="card-title">
         <span>🔥 Recent Threats</span>
         <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
-          {['ALL', 'HIGH', 'MEDIUM', 'LOW'].map(level => (
+          {['ALL', 'HIGH', 'MEDIUM', 'LOW', 'INFORMATIONAL'].map(level => (
             <button
               key={level}
               onClick={() => setSeverityFilter(level)}
