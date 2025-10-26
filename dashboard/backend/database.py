@@ -649,10 +649,14 @@ class ThreatIntelDB:
             actors_found = {}  # Use dict to prevent duplicates and aggregate data
             
             for row in rows:
+                # Limit content to first 5000 characters for performance
+                # Threat actors are usually mentioned early in articles
+                content_text = (row['content'] or '')[:5000]
+                
                 text = ' '.join([
                     row['title'] or '',
                     row['summary'] or '',
-                    row['content'] or ''
+                    content_text
                 ]).lower()
                 
                 # Search for threat actor mentions
@@ -691,10 +695,13 @@ class ThreatIntelDB:
             ]
             
             for row in rows:
+                # Limit content to first 5000 characters for performance
+                content_text = (row['content'] or '')[:5000]
+                
                 text = ' '.join([
                     row['title'] or '',
                     row['summary'] or '',
-                    row['content'] or ''
+                    content_text
                 ])
                 
                 # Search for pattern matches
