@@ -60,7 +60,7 @@ def generate_kql_for_articles(article_ids):
 
 def prompt_kql_generation():
     """Prompt user to generate KQL queries"""
-    from logging_utils import BColors
+    from src.utils.logging_utils import BColors
     
     print(f"\n{BColors.HEADER}{'='*70}{BColors.ENDC}")
     print(f"{BColors.OKCYAN}📊 KQL Threat Hunting Query Generator{BColors.ENDC}")

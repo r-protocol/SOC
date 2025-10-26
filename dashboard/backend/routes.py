@@ -107,3 +107,55 @@ def article_details(article_id):
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
+@api.route('/top-targeted-industries', methods=['GET'])
+def top_targeted_industries():
+    """Get top targeted industries"""
+    try:
+        limit = int(request.args.get('limit', 10))
+        days = request.args.get('days', type=int)
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        data = db.get_top_targeted_industries(limit=limit, days=days, start_date=start_date, end_date=end_date)
+        return jsonify(data), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@api.route('/threat-actor-activity', methods=['GET'])
+def threat_actor_activity():
+    """Get threat actor activity"""
+    try:
+        limit = int(request.args.get('limit', 15))
+        days = request.args.get('days', type=int)
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        data = db.get_threat_actor_activity(limit=limit, days=days, start_date=start_date, end_date=end_date)
+        return jsonify(data), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@api.route('/attack-vectors', methods=['GET'])
+def attack_vectors():
+    """Get attack vector distribution"""
+    try:
+        days = request.args.get('days', type=int)
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        data = db.get_attack_vectors(days=days, start_date=start_date, end_date=end_date)
+        return jsonify(data), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@api.route('/trending-cves', methods=['GET'])
+def trending_cves():
+    """Get trending CVEs"""
+    try:
+        limit = int(request.args.get('limit', 10))
+        days = request.args.get('days', type=int)
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        data = db.get_trending_cves(limit=limit, days=days, start_date=start_date, end_date=end_date)
+        return jsonify(data), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+

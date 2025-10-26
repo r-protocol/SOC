@@ -127,7 +127,9 @@ class ThreatIntelDB:
             cursor.execute(f"""
                 SELECT category, COUNT(*) as count
                 FROM articles
-                WHERE category IS NOT NULL AND {date_filter}
+                WHERE category IS NOT NULL 
+                AND category != 'Not Cybersecurity Related' 
+                AND {date_filter}
                 GROUP BY category
                 ORDER BY count DESC
                 LIMIT 10
@@ -162,6 +164,8 @@ class ThreatIntelDB:
                     COUNT(*) as count
                 FROM articles
                 WHERE {date_filter}
+                AND category != 'Not Cybersecurity Related'
+                AND threat_risk != 'NOT_RELEVANT'
                 GROUP BY DATE(published_date), threat_risk
                 ORDER BY date
             """)
@@ -205,6 +209,8 @@ class ThreatIntelDB:
                     published_date, url
                 FROM articles
                 WHERE {date_filter}
+                AND category != 'Not Cybersecurity Related'
+                AND threat_risk != 'NOT_RELEVANT'
             """
             
             if risk_filter:
@@ -462,7 +468,12 @@ class ThreatIntelDB:
         cursor = conn.cursor()
         
         try:
-            cursor.execute("SELECT category, title FROM articles")
+            cursor.execute("""
+                SELECT category, title 
+                FROM articles 
+                WHERE category != 'Not Cybersecurity Related'
+                AND threat_risk != 'NOT_RELEVANT'
+            """)
             rows = cursor.fetchall()
             
             threat_names = defaultdict(int)
@@ -484,3 +495,252 @@ class ThreatIntelDB:
             print(f"❌ Error in get_threat_families: {e}")
             conn.close()
             return []
+
+    def get_top_targeted_industries(self, limit=10, days=None, start_date=None, end_date=None):
+        """Get top targeted industries from article content analysis"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            date_filter = self._get_date_filter(days, start_date, end_date)
+            
+            cursor.execute(f"""
+                SELECT category, title, summary, content
+                FROM articles
+                WHERE category != 'Not Cybersecurity Related'
+                AND threat_risk != 'NOT_RELEVANT'
+                AND {date_filter}
+            """)
+            
+            rows = cursor.fetchall()
+            industry_counts = defaultdict(int)
+            
+            # Industry keywords mapping
+            industry_keywords = {
+                'Finance': ['bank', 'financial', 'finance', 'payment', 'credit', 'trading', 'fintech', 'cryptocurrency', 'crypto'],
+                'Healthcare': ['health', 'hospital', 'medical', 'patient', 'healthcare', 'pharmaceutical', 'clinic'],
+                'Government': ['government', 'federal', 'state', 'military', 'defense', 'agency', 'public sector'],
+                'Manufacturing': ['manufacturing', 'industrial', 'factory', 'production', 'automotive', 'supply chain'],
+                'Technology': ['tech', 'software', 'cloud', 'saas', 'it company', 'technology firm'],
+                'Energy': ['energy', 'oil', 'gas', 'utility', 'power', 'electric', 'renewable'],
+                'Retail': ['retail', 'ecommerce', 'e-commerce', 'shopping', 'store', 'consumer'],
+                'Education': ['education', 'university', 'school', 'college', 'academic', 'student'],
+                'Telecommunications': ['telecom', 'telecommunications', 'mobile', 'network provider', 'isp'],
+                'Transportation': ['transportation', 'airline', 'shipping', 'logistics', 'aviation']
+            }
+            
+            for row in rows:
+                text = ' '.join([
+                    row['category'] or '',
+                    row['title'] or '',
+                    row['summary'] or '',
+                    row['content'] or ''
+                ]).lower()
+                
+                for industry, keywords in industry_keywords.items():
+                    if any(keyword in text for keyword in keywords):
+                        industry_counts[industry] += 1
+            
+            conn.close()
+            
+            # Sort by count and return top N
+            sorted_industries = sorted(industry_counts.items(), key=lambda x: x[1], reverse=True)[:limit]
+            return [{"name": industry, "value": count} for industry, count in sorted_industries]
+            
+        except Exception as e:
+            print(f"❌ Error in get_top_targeted_industries: {e}")
+            conn.close()
+            return []
+
+    def get_threat_actor_activity(self, limit=15, days=None, start_date=None, end_date=None):
+        """Get threat actor activity from articles"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            date_filter = self._get_date_filter(days, start_date, end_date)
+            
+            cursor.execute(f"""
+                SELECT id, title, category, published_date, summary
+                FROM articles
+                WHERE category != 'Not Cybersecurity Related'
+                AND threat_risk != 'NOT_RELEVANT'
+                AND {date_filter}
+                ORDER BY published_date DESC
+            """)
+            
+            rows = cursor.fetchall()
+            actors = []
+            
+            # Known threat actors and groups with geographic coordinates
+            threat_actors = {
+                'Lazarus': {'country': 'North Korea', 'type': 'APT', 'lat': 40.3399, 'lon': 127.5101},
+                'APT28': {'country': 'Russia', 'type': 'APT', 'lat': 61.5240, 'lon': 105.3188},
+                'APT29': {'country': 'Russia', 'type': 'APT', 'lat': 61.5240, 'lon': 105.3188},
+                'APT41': {'country': 'China', 'type': 'APT', 'lat': 35.8617, 'lon': 104.1954},
+                'FIN7': {'country': 'Russia', 'type': 'Cybercrime', 'lat': 61.5240, 'lon': 105.3188},
+                'Kimsuky': {'country': 'North Korea', 'type': 'APT', 'lat': 40.3399, 'lon': 127.5101},
+                'Sandworm': {'country': 'Russia', 'type': 'APT', 'lat': 61.5240, 'lon': 105.3188},
+                'Volt Typhoon': {'country': 'China', 'type': 'APT', 'lat': 35.8617, 'lon': 104.1954},
+                'LockBit': {'country': 'Unknown', 'type': 'Ransomware', 'lat': 0, 'lon': 0},
+                'Conti': {'country': 'Russia', 'type': 'Ransomware', 'lat': 61.5240, 'lon': 105.3188},
+                'BlackCat': {'country': 'Unknown', 'type': 'Ransomware', 'lat': 0, 'lon': 0},
+                'Cl0p': {'country': 'Russia', 'type': 'Ransomware', 'lat': 61.5240, 'lon': 105.3188},
+                'REvil': {'country': 'Russia', 'type': 'Ransomware', 'lat': 61.5240, 'lon': 105.3188},
+                'Scattered Spider': {'country': 'Unknown', 'type': 'Cybercrime', 'lat': 0, 'lon': 0},
+                'TA505': {'country': 'Russia', 'type': 'Cybercrime', 'lat': 61.5240, 'lon': 105.3188},
+                'APT32': {'country': 'Vietnam', 'type': 'APT', 'lat': 14.0583, 'lon': 108.2772},
+                'APT33': {'country': 'Iran', 'type': 'APT', 'lat': 32.4279, 'lon': 53.6880},
+                'APT34': {'country': 'Iran', 'type': 'APT', 'lat': 32.4279, 'lon': 53.6880},
+                'APT37': {'country': 'North Korea', 'type': 'APT', 'lat': 40.3399, 'lon': 127.5101},
+                'APT38': {'country': 'North Korea', 'type': 'APT', 'lat': 40.3399, 'lon': 127.5101},
+                'APT39': {'country': 'Iran', 'type': 'APT', 'lat': 32.4279, 'lon': 53.6880},
+                'Storm-0978': {'country': 'China', 'type': 'APT', 'lat': 35.8617, 'lon': 104.1954},
+                'Mustang Panda': {'country': 'China', 'type': 'APT', 'lat': 35.8617, 'lon': 104.1954}
+            }
+            
+            for row in rows:
+                text = (row['title'] + ' ' + (row['summary'] or '')).lower()
+                
+                for actor, info in threat_actors.items():
+                    if actor.lower() in text:
+                        actors.append({
+                            'actor': actor,
+                            'country': info['country'],
+                            'type': info['type'],
+                            'lat': info['lat'],
+                            'lon': info['lon'],
+                            'article_title': row['title'],
+                            'date': row['published_date'],
+                            'article_id': row['id']
+                        })
+                        break  # Only count once per article
+            
+            conn.close()
+            return actors[:limit]
+            
+        except Exception as e:
+            print(f"❌ Error in get_threat_actor_activity: {e}")
+            conn.close()
+            return []
+
+    def get_attack_vectors(self, days=None, start_date=None, end_date=None):
+        """Get attack vector distribution from articles"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            date_filter = self._get_date_filter(days, start_date, end_date)
+            
+            cursor.execute(f"""
+                SELECT title, summary, content, category
+                FROM articles
+                WHERE category != 'Not Cybersecurity Related'
+                AND threat_risk != 'NOT_RELEVANT'
+                AND {date_filter}
+            """)
+            
+            rows = cursor.fetchall()
+            vector_counts = defaultdict(int)
+            
+            # Attack vector keywords
+            vectors = {
+                'Phishing': ['phishing', 'spear phishing', 'email attack', 'credential theft', 'fake email'],
+                'Exploit': ['exploit', 'vulnerability', 'cve', 'zero-day', '0-day', 'rce', 'remote code execution'],
+                'Malware': ['malware', 'trojan', 'rat', 'backdoor', 'dropper', 'loader'],
+                'Ransomware': ['ransomware', 'encryption', 'ransom', 'extortion'],
+                'Supply Chain': ['supply chain', 'third-party', 'vendor compromise', 'software supply'],
+                'Credential Access': ['credential', 'password', 'stolen credentials', 'brute force', 'password spray'],
+                'Web Application': ['web attack', 'sql injection', 'xss', 'web shell', 'web application'],
+                'Social Engineering': ['social engineering', 'pretexting', 'baiting', 'quid pro quo'],
+                'DDoS': ['ddos', 'denial of service', 'distributed denial'],
+                'Insider Threat': ['insider', 'insider threat', 'malicious insider']
+            }
+            
+            for row in rows:
+                text = ' '.join([
+                    row['title'] or '',
+                    row['summary'] or '',
+                    row['content'] or '',
+                    row['category'] or ''
+                ]).lower()
+                
+                for vector, keywords in vectors.items():
+                    if any(keyword in text for keyword in keywords):
+                        vector_counts[vector] += 1
+            
+            conn.close()
+            
+            # Sort by count
+            sorted_vectors = sorted(vector_counts.items(), key=lambda x: x[1], reverse=True)
+            return [{"name": vector, "value": count} for vector, count in sorted_vectors if count > 0]
+            
+        except Exception as e:
+            print(f"❌ Error in get_attack_vectors: {e}")
+            conn.close()
+            return []
+
+    def get_trending_cves(self, limit=10, days=None, start_date=None, end_date=None):
+        """Get trending CVEs from IOCs and articles"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            date_filter = self._get_date_filter(days, start_date, end_date)
+            
+            # Get CVEs from IOCs table
+            cursor.execute(f"""
+                SELECT i.ioc_value, i.context, a.title, a.published_date, a.threat_risk, a.id
+                FROM iocs i
+                JOIN articles a ON i.article_id = a.id
+                WHERE i.ioc_type = 'cves'
+                AND a.category != 'Not Cybersecurity Related'
+                AND a.threat_risk != 'NOT_RELEVANT'
+                AND a.{date_filter}
+                ORDER BY a.published_date DESC
+            """)
+            
+            cve_data = defaultdict(lambda: {'count': 0, 'articles': [], 'severity': 'UNKNOWN', 'context': []})
+            
+            for row in cursor.fetchall():
+                cve = row['ioc_value']
+                cve_data[cve]['count'] += 1
+                cve_data[cve]['articles'].append({
+                    'title': row['title'],
+                    'date': row['published_date'],
+                    'id': row['id']
+                })
+                
+                # Determine severity from article risk
+                if row['threat_risk'] == 'HIGH':
+                    cve_data[cve]['severity'] = 'CRITICAL'
+                elif cve_data[cve]['severity'] == 'UNKNOWN' and row['threat_risk'] == 'MEDIUM':
+                    cve_data[cve]['severity'] = 'HIGH'
+                
+                if row['context']:
+                    cve_data[cve]['context'].append(row['context'])
+            
+            # Convert to list and sort by count
+            cves = []
+            for cve, data in cve_data.items():
+                cves.append({
+                    'cve': cve,
+                    'count': data['count'],
+                    'severity': data['severity'],
+                    'latest_article': data['articles'][0]['title'] if data['articles'] else '',
+                    'date': data['articles'][0]['date'] if data['articles'] else '',
+                    'context': data['context'][0] if data['context'] else ''
+                })
+            
+            cves.sort(key=lambda x: x['count'], reverse=True)
+            conn.close()
+            
+            return cves[:limit]
+            
+        except Exception as e:
+            print(f"❌ Error in get_trending_cves: {e}")
+            import traceback
+            traceback.print_exc()
+            conn.close()
+            return []
+

@@ -1,13 +1,18 @@
 import React, { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import PipelineOverview from './components/PipelineOverview';
 import ThreatTimeline from './components/ThreatTimeline';
 import CategoryDistribution from './components/CategoryDistribution';
 import RecentThreats from './components/RecentThreats';
 import IOCStats from './components/IOCStats';
 import RSSFeedStats from './components/RSSFeedStats';
-import ThreatFamilies from './components/ThreatFamilies';
+import TopTargetedIndustries from './components/TopTargetedIndustries';
+import ThreatActorGeoMap from './components/ThreatActorGeoMap';
+import AttackVectorDistribution from './components/AttackVectorDistribution';
+import TrendingCVEs from './components/TrendingCVEs';
+import ArticlePage from './components/ArticlePage';
 
-function App() {
+function Dashboard() {
   const [refreshInterval, setRefreshInterval] = useState(300000); // 5 minutes (300 seconds)
   const [error, setError] = useState(null);
   const [timeRange, setTimeRange] = useState({ type: '7days', days: 7 });
@@ -244,8 +249,17 @@ function App() {
       </div>
 
       <div className="grid grid-2" style={{ marginTop: '24px' }}>
-        <ThreatFamilies timeRange={timeRange} />
+        <TopTargetedIndustries timeRange={timeRange} />
         <IOCStats timeRange={timeRange} />
+      </div>
+
+      <div style={{ marginTop: '24px' }}>
+        <ThreatActorGeoMap timeRange={timeRange} />
+      </div>
+
+      <div className="grid grid-2" style={{ marginTop: '24px' }}>
+        <AttackVectorDistribution timeRange={timeRange} />
+        <TrendingCVEs timeRange={timeRange} />
       </div>
 
       <div style={{ marginTop: '24px' }}>
@@ -256,6 +270,17 @@ function App() {
         <RSSFeedStats timeRange={timeRange} />
       </div>
     </div>
+  );
+}
+
+function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Dashboard />} />
+        <Route path="/article" element={<ArticlePage />} />
+      </Routes>
+    </BrowserRouter>
   );
 }
 
