@@ -23,30 +23,43 @@ class ThreatIntelDB:
         conn.row_factory = sqlite3.Row
         return conn
     
-    def get_pipeline_overview(self):
+    def _get_date_filter(self, days=None, start_date=None, end_date=None):
+        """Helper to build date filter SQL"""
+        if start_date and end_date:
+            return f"published_date BETWEEN '{start_date}' AND '{end_date}'"
+        elif days:
+            date_threshold = (datetime.now() - timedelta(days=days)).isoformat()
+            return f"published_date >= '{date_threshold}'"
+        else:
+            # Default to 7 days
+            date_threshold = (datetime.now() - timedelta(days=7)).isoformat()
+            return f"published_date >= '{date_threshold}'"
+    
+    def get_pipeline_overview(self, days=None, start_date=None, end_date=None):
         """Get pipeline statistics"""
         conn = self.get_connection()
         cursor = conn.cursor()
         
         try:
+            date_filter = self._get_date_filter(days, start_date, end_date)
+            
             # Get total articles
             cursor.execute("SELECT COUNT(*) as total FROM articles")
             total_articles = cursor.fetchone()['total']
             
-            # Get articles from last 7 days
-            seven_days_ago = (datetime.now() - timedelta(days=7)).isoformat()
-            cursor.execute("""
+            # Get articles within date range
+            cursor.execute(f"""
                 SELECT COUNT(*) as recent 
                 FROM articles 
-                WHERE published_date >= ?
-            """, (seven_days_ago,))
+                WHERE {date_filter}
+            """)
             recent_articles = cursor.fetchone()['recent']
             
-            # Get HIGH risk count
-            cursor.execute("""
+            # Get HIGH risk count within date range
+            cursor.execute(f"""
                 SELECT COUNT(*) as critical 
                 FROM articles 
-                WHERE threat_risk = 'HIGH'
+                WHERE threat_risk = 'HIGH' AND {date_filter}
             """)
             critical_count = cursor.fetchone()['critical']
             
@@ -103,16 +116,18 @@ class ThreatIntelDB:
             conn.close()
             return {}
     
-    def get_category_distribution(self):
+    def get_category_distribution(self, days=None, start_date=None, end_date=None):
         """Get threat distribution by category"""
         conn = self.get_connection()
         cursor = conn.cursor()
         
         try:
-            cursor.execute("""
+            date_filter = self._get_date_filter(days, start_date, end_date)
+            
+            cursor.execute(f"""
                 SELECT category, COUNT(*) as count
                 FROM articles
-                WHERE category IS NOT NULL
+                WHERE category IS NOT NULL AND {date_filter}
                 GROUP BY category
                 ORDER BY count DESC
                 LIMIT 10
@@ -132,24 +147,24 @@ class ThreatIntelDB:
             conn.close()
             return []
     
-    def get_threat_timeline(self, days=7):
+    def get_threat_timeline(self, days=None, start_date=None, end_date=None):
         """Get threat counts over time"""
         conn = self.get_connection()
         cursor = conn.cursor()
         
         try:
-            start_date = (datetime.now() - timedelta(days=days)).isoformat()
+            date_filter = self._get_date_filter(days, start_date, end_date)
             
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT 
                     DATE(published_date) as date,
                     threat_risk,
                     COUNT(*) as count
                 FROM articles
-                WHERE published_date >= ?
+                WHERE {date_filter}
                 GROUP BY DATE(published_date), threat_risk
                 ORDER BY date
-            """, (start_date,))
+            """)
             
             # Organize data by date and risk level
             timeline_data = defaultdict(lambda: {"HIGH": 0, "MEDIUM": 0, "LOW": 0})
@@ -176,28 +191,28 @@ class ThreatIntelDB:
             conn.close()
             return []
     
-    def get_recent_threats(self, limit=10, risk_filter=None):
+    def get_recent_threats(self, limit=10, risk_filter=None, days=None, start_date=None, end_date=None):
         """Get recent high-priority threats"""
         conn = self.get_connection()
         cursor = conn.cursor()
         
         try:
-            query = """
+            date_filter = self._get_date_filter(days, start_date, end_date)
+            
+            query = f"""
                 SELECT 
                     id, title, summary, category, threat_risk, 
                     published_date, url
                 FROM articles
+                WHERE {date_filter}
             """
             
-            params = []
             if risk_filter:
-                query += " WHERE threat_risk = ?"
-                params.append(risk_filter)
+                query += f" AND threat_risk = '{risk_filter}'"
             
             query += " ORDER BY published_date DESC LIMIT ?"
-            params.append(limit)
             
-            cursor.execute(query, params)
+            cursor.execute(query, (limit,))
             
             threats = []
             for row in cursor.fetchall():

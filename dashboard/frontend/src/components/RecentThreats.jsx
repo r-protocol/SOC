@@ -3,7 +3,7 @@ import axios from 'axios';
 
 const API_BASE = 'http://localhost:5000/api';
 
-function RecentThreats() {
+function RecentThreats({ timeRange }) {
   const [threats, setThreats] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedThreat, setSelectedThreat] = useState(null);
@@ -12,7 +12,16 @@ function RecentThreats() {
   useEffect(() => {
     setLoading(true);
     const riskParam = severityFilter === 'ALL' ? '' : `&risk=${severityFilter}`;
-    axios.get(`${API_BASE}/recent-threats?limit=50${riskParam}`)
+    
+    // Build time range parameters
+    let timeParams = '';
+    if (timeRange.type === 'daterange' && timeRange.startDate && timeRange.endDate) {
+      timeParams = `&start_date=${timeRange.startDate}&end_date=${timeRange.endDate}`;
+    } else if (timeRange.days) {
+      timeParams = `&days=${timeRange.days}`;
+    }
+    
+    axios.get(`${API_BASE}/recent-threats?limit=50${riskParam}${timeParams}`)
       .then(res => {
         setThreats(res.data);
         setLoading(false);
@@ -21,7 +30,7 @@ function RecentThreats() {
         console.error(err);
         setLoading(false);
       });
-  }, [severityFilter]);
+  }, [severityFilter, timeRange]);
 
   const handleThreatClick = (threatId) => {
     axios.get(`${API_BASE}/article/${threatId}`)

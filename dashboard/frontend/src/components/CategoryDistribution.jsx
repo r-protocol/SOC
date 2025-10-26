@@ -6,12 +6,20 @@ const API_BASE = 'http://localhost:5000/api';
 
 const COLORS = ['#ea4335', '#ff6d01', '#fbbc04', '#34a853', '#4285f4', '#a142f4', '#f538a0', '#00d9c0'];
 
-function CategoryDistribution() {
+function CategoryDistribution({ timeRange }) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    axios.get(`${API_BASE}/category-distribution`)
+    // Build time range parameters
+    let timeParams = '';
+    if (timeRange.type === 'daterange' && timeRange.startDate && timeRange.endDate) {
+      timeParams = `?start_date=${timeRange.startDate}&end_date=${timeRange.endDate}`;
+    } else if (timeRange.days) {
+      timeParams = `?days=${timeRange.days}`;
+    }
+    
+    axios.get(`${API_BASE}/category-distribution${timeParams}`)
       .then(res => {
         setData(res.data);
         setLoading(false);
@@ -20,7 +28,7 @@ function CategoryDistribution() {
         console.error(err);
         setLoading(false);
       });
-  }, []);
+  }, [timeRange]);
 
   if (loading) return <div className="card loading">Loading categories...</div>;
 

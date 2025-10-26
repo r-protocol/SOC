@@ -8,7 +8,10 @@ db = ThreatIntelDB()
 def pipeline_overview():
     """Get pipeline statistics"""
     try:
-        data = db.get_pipeline_overview()
+        days = request.args.get('days', type=int)
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        data = db.get_pipeline_overview(days=days, start_date=start_date, end_date=end_date)
         return jsonify(data), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -26,7 +29,10 @@ def risk_distribution():
 def category_distribution():
     """Get category distribution"""
     try:
-        data = db.get_category_distribution()
+        days = request.args.get('days', type=int)
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        data = db.get_category_distribution(days=days, start_date=start_date, end_date=end_date)
         return jsonify(data), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -35,8 +41,10 @@ def category_distribution():
 def threat_timeline():
     """Get threat timeline data"""
     try:
-        days = int(request.args.get('days', 7))
-        data = db.get_threat_timeline(days)
+        days = request.args.get('days', type=int)
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        data = db.get_threat_timeline(days=days, start_date=start_date, end_date=end_date)
         return jsonify(data), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -47,7 +55,10 @@ def recent_threats():
     try:
         limit = int(request.args.get('limit', 10))
         risk_filter = request.args.get('risk', None)
-        data = db.get_recent_threats(limit, risk_filter)
+        days = request.args.get('days', type=int)
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        data = db.get_recent_threats(limit, risk_filter, days=days, start_date=start_date, end_date=end_date)
         return jsonify(data), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500

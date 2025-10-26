@@ -3,12 +3,20 @@ import axios from 'axios';
 
 const API_BASE = 'http://localhost:5000/api';
 
-function PipelineOverview() {
+function PipelineOverview({ timeRange }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    axios.get(`${API_BASE}/pipeline-overview`)
+    // Build time range parameters
+    let timeParams = '';
+    if (timeRange.type === 'daterange' && timeRange.startDate && timeRange.endDate) {
+      timeParams = `?start_date=${timeRange.startDate}&end_date=${timeRange.endDate}`;
+    } else if (timeRange.days) {
+      timeParams = `?days=${timeRange.days}`;
+    }
+    
+    axios.get(`${API_BASE}/pipeline-overview${timeParams}`)
       .then(res => {
         setData(res.data);
         setLoading(false);
@@ -17,7 +25,7 @@ function PipelineOverview() {
         console.error(err);
         setLoading(false);
       });
-  }, []);
+  }, [timeRange]);
 
   if (loading) return <div className="card loading">Loading...</div>;
   if (!data) return null;

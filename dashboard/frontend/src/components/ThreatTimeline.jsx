@@ -4,13 +4,20 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 
 const API_BASE = 'http://localhost:5000/api';
 
-function ThreatTimeline() {
+function ThreatTimeline({ timeRange }) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [days, setDays] = useState(7);
 
   useEffect(() => {
-    axios.get(`${API_BASE}/threat-timeline?days=${days}`)
+    // Build time range parameters
+    let timeParams = '';
+    if (timeRange.type === 'daterange' && timeRange.startDate && timeRange.endDate) {
+      timeParams = `start_date=${timeRange.startDate}&end_date=${timeRange.endDate}`;
+    } else if (timeRange.days) {
+      timeParams = `days=${timeRange.days}`;
+    }
+    
+    axios.get(`${API_BASE}/threat-timeline?${timeParams}`)
       .then(res => {
         setData(res.data);
         setLoading(false);
@@ -19,13 +26,18 @@ function ThreatTimeline() {
         console.error(err);
         setLoading(false);
       });
-  }, [days]);
+  }, [timeRange]);
 
   if (loading) return <div className="card loading">Loading timeline...</div>;
 
+  const displayDays = timeRange.days || 7;
+  const displayLabel = timeRange.type === 'daterange' && timeRange.startDate && timeRange.endDate
+    ? `${new Date(timeRange.startDate).toLocaleDateString()} - ${new Date(timeRange.endDate).toLocaleDateString()}`
+    : `${displayDays} Days`;
+
   return (
     <div className="card">
-      <div className="card-title">📈 Threat Timeline ({days} Days)</div>
+      <div className="card-title">📈 Threat Timeline ({displayLabel})</div>
       <ResponsiveContainer width="100%" height={300}>
         <LineChart data={data}>
           <CartesianGrid strokeDasharray="3 3" stroke="#3f3f55" />
