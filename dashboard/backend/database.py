@@ -552,8 +552,8 @@ class ThreatIntelDB:
             conn.close()
             return []
 
-    def get_threat_actor_activity(self, limit=15, days=None, start_date=None, end_date=None):
-        """Get threat actor activity from articles"""
+    def get_threat_actor_activity(self, limit=50, days=None, start_date=None, end_date=None):
+        """Get threat actor activity dynamically extracted from articles"""
         conn = self.get_connection()
         cursor = conn.cursor()
         
@@ -561,7 +561,7 @@ class ThreatIntelDB:
             date_filter = self._get_date_filter(days, start_date, end_date)
             
             cursor.execute(f"""
-                SELECT id, title, category, published_date, summary
+                SELECT id, title, category, published_date, summary, content
                 FROM articles
                 WHERE category != 'Not Cybersecurity Related'
                 AND threat_risk != 'NOT_RELEVANT'
@@ -570,57 +570,138 @@ class ThreatIntelDB:
             """)
             
             rows = cursor.fetchall()
-            actors = []
             
-            # Known threat actors and groups with geographic coordinates
-            threat_actors = {
-                'Lazarus': {'country': 'North Korea', 'type': 'APT', 'lat': 40.3399, 'lon': 127.5101},
-                'APT28': {'country': 'Russia', 'type': 'APT', 'lat': 61.5240, 'lon': 105.3188},
-                'APT29': {'country': 'Russia', 'type': 'APT', 'lat': 61.5240, 'lon': 105.3188},
-                'APT41': {'country': 'China', 'type': 'APT', 'lat': 35.8617, 'lon': 104.1954},
-                'FIN7': {'country': 'Russia', 'type': 'Cybercrime', 'lat': 61.5240, 'lon': 105.3188},
-                'Kimsuky': {'country': 'North Korea', 'type': 'APT', 'lat': 40.3399, 'lon': 127.5101},
-                'Sandworm': {'country': 'Russia', 'type': 'APT', 'lat': 61.5240, 'lon': 105.3188},
-                'Volt Typhoon': {'country': 'China', 'type': 'APT', 'lat': 35.8617, 'lon': 104.1954},
-                'LockBit': {'country': 'Unknown', 'type': 'Ransomware', 'lat': 0, 'lon': 0},
-                'Conti': {'country': 'Russia', 'type': 'Ransomware', 'lat': 61.5240, 'lon': 105.3188},
-                'BlackCat': {'country': 'Unknown', 'type': 'Ransomware', 'lat': 0, 'lon': 0},
-                'Cl0p': {'country': 'Russia', 'type': 'Ransomware', 'lat': 61.5240, 'lon': 105.3188},
-                'REvil': {'country': 'Russia', 'type': 'Ransomware', 'lat': 61.5240, 'lon': 105.3188},
-                'Scattered Spider': {'country': 'Unknown', 'type': 'Cybercrime', 'lat': 0, 'lon': 0},
-                'TA505': {'country': 'Russia', 'type': 'Cybercrime', 'lat': 61.5240, 'lon': 105.3188},
-                'APT32': {'country': 'Vietnam', 'type': 'APT', 'lat': 14.0583, 'lon': 108.2772},
-                'APT33': {'country': 'Iran', 'type': 'APT', 'lat': 32.4279, 'lon': 53.6880},
-                'APT34': {'country': 'Iran', 'type': 'APT', 'lat': 32.4279, 'lon': 53.6880},
-                'APT37': {'country': 'North Korea', 'type': 'APT', 'lat': 40.3399, 'lon': 127.5101},
-                'APT38': {'country': 'North Korea', 'type': 'APT', 'lat': 40.3399, 'lon': 127.5101},
-                'APT39': {'country': 'Iran', 'type': 'APT', 'lat': 32.4279, 'lon': 53.6880},
-                'Storm-0978': {'country': 'China', 'type': 'APT', 'lat': 35.8617, 'lon': 104.1954},
-                'Mustang Panda': {'country': 'China', 'type': 'APT', 'lat': 35.8617, 'lon': 104.1954}
+            # Comprehensive threat actor database with geographic coordinates
+            threat_actor_db = {
+                # North Korean APTs
+                'lazarus': {'name': 'Lazarus Group', 'country': 'North Korea', 'type': 'APT', 'lat': 39.0392, 'lon': 125.7625},
+                'kimsuky': {'name': 'Kimsuky', 'country': 'North Korea', 'type': 'APT', 'lat': 39.0392, 'lon': 125.7625},
+                'apt37': {'name': 'APT37', 'country': 'North Korea', 'type': 'APT', 'lat': 39.0392, 'lon': 125.7625},
+                'apt38': {'name': 'APT38', 'country': 'North Korea', 'type': 'APT', 'lat': 39.0392, 'lon': 125.7625},
+                'bluenoroff': {'name': 'BlueNoroff', 'country': 'North Korea', 'type': 'APT', 'lat': 39.0392, 'lon': 125.7625},
+                'andariel': {'name': 'Andariel', 'country': 'North Korea', 'type': 'APT', 'lat': 39.0392, 'lon': 125.7625},
+                
+                # Russian APTs
+                'apt28': {'name': 'APT28 (Fancy Bear)', 'country': 'Russia', 'type': 'APT', 'lat': 55.7558, 'lon': 37.6173},
+                'apt29': {'name': 'APT29 (Cozy Bear)', 'country': 'Russia', 'type': 'APT', 'lat': 55.7558, 'lon': 37.6173},
+                'sandworm': {'name': 'Sandworm', 'country': 'Russia', 'type': 'APT', 'lat': 55.7558, 'lon': 37.6173},
+                'turla': {'name': 'Turla', 'country': 'Russia', 'type': 'APT', 'lat': 55.7558, 'lon': 37.6173},
+                'gamaredon': {'name': 'Gamaredon', 'country': 'Russia', 'type': 'APT', 'lat': 55.7558, 'lon': 37.6173},
+                'fancy bear': {'name': 'APT28 (Fancy Bear)', 'country': 'Russia', 'type': 'APT', 'lat': 55.7558, 'lon': 37.6173},
+                'cozy bear': {'name': 'APT29 (Cozy Bear)', 'country': 'Russia', 'type': 'APT', 'lat': 55.7558, 'lon': 37.6173},
+                
+                # Chinese APTs
+                'apt41': {'name': 'APT41', 'country': 'China', 'type': 'APT', 'lat': 39.9042, 'lon': 116.4074},
+                'volt typhoon': {'name': 'Volt Typhoon', 'country': 'China', 'type': 'APT', 'lat': 39.9042, 'lon': 116.4074},
+                'apt10': {'name': 'APT10', 'country': 'China', 'type': 'APT', 'lat': 39.9042, 'lon': 116.4074},
+                'apt40': {'name': 'APT40', 'country': 'China', 'type': 'APT', 'lat': 39.9042, 'lon': 116.4074},
+                'mustang panda': {'name': 'Mustang Panda', 'country': 'China', 'type': 'APT', 'lat': 39.9042, 'lon': 116.4074},
+                'storm-0978': {'name': 'Storm-0978', 'country': 'China', 'type': 'APT', 'lat': 39.9042, 'lon': 116.4074},
+                'aquatic panda': {'name': 'Aquatic Panda', 'country': 'China', 'type': 'APT', 'lat': 39.9042, 'lon': 116.4074},
+                
+                # Iranian APTs
+                'apt33': {'name': 'APT33', 'country': 'Iran', 'type': 'APT', 'lat': 35.6892, 'lon': 51.3890},
+                'apt34': {'name': 'APT34 (OilRig)', 'country': 'Iran', 'type': 'APT', 'lat': 35.6892, 'lon': 51.3890},
+                'apt35': {'name': 'APT35', 'country': 'Iran', 'type': 'APT', 'lat': 35.6892, 'lon': 51.3890},
+                'apt39': {'name': 'APT39', 'country': 'Iran', 'type': 'APT', 'lat': 35.6892, 'lon': 51.3890},
+                'charming kitten': {'name': 'Charming Kitten', 'country': 'Iran', 'type': 'APT', 'lat': 35.6892, 'lon': 51.3890},
+                'phosphorus': {'name': 'Phosphorus', 'country': 'Iran', 'type': 'APT', 'lat': 35.6892, 'lon': 51.3890},
+                'oilrig': {'name': 'APT34 (OilRig)', 'country': 'Iran', 'type': 'APT', 'lat': 35.6892, 'lon': 51.3890},
+                
+                # Vietnamese APTs
+                'apt32': {'name': 'APT32 (OceanLotus)', 'country': 'Vietnam', 'type': 'APT', 'lat': 21.0285, 'lon': 105.8542},
+                'oceanlotus': {'name': 'APT32 (OceanLotus)', 'country': 'Vietnam', 'type': 'APT', 'lat': 21.0285, 'lon': 105.8542},
+                
+                # Ransomware Groups
+                'lockbit': {'name': 'LockBit', 'country': 'Russia', 'type': 'Ransomware', 'lat': 55.7558, 'lon': 37.6173},
+                'conti': {'name': 'Conti', 'country': 'Russia', 'type': 'Ransomware', 'lat': 55.7558, 'lon': 37.6173},
+                'blackcat': {'name': 'BlackCat (ALPHV)', 'country': 'Russia', 'type': 'Ransomware', 'lat': 55.7558, 'lon': 37.6173},
+                'alphv': {'name': 'BlackCat (ALPHV)', 'country': 'Russia', 'type': 'Ransomware', 'lat': 55.7558, 'lon': 37.6173},
+                'cl0p': {'name': 'Cl0p', 'country': 'Russia', 'type': 'Ransomware', 'lat': 55.7558, 'lon': 37.6173},
+                'clop': {'name': 'Cl0p', 'country': 'Russia', 'type': 'Ransomware', 'lat': 55.7558, 'lon': 37.6173},
+                'revil': {'name': 'REvil', 'country': 'Russia', 'type': 'Ransomware', 'lat': 55.7558, 'lon': 37.6173},
+                'darkside': {'name': 'DarkSide', 'country': 'Russia', 'type': 'Ransomware', 'lat': 55.7558, 'lon': 37.6173},
+                'hive': {'name': 'Hive', 'country': 'Unknown', 'type': 'Ransomware', 'lat': 51.1657, 'lon': 10.4515},
+                'black basta': {'name': 'Black Basta', 'country': 'Russia', 'type': 'Ransomware', 'lat': 55.7558, 'lon': 37.6173},
+                'royal': {'name': 'Royal Ransomware', 'country': 'Russia', 'type': 'Ransomware', 'lat': 55.7558, 'lon': 37.6173},
+                'play': {'name': 'Play Ransomware', 'country': 'Unknown', 'type': 'Ransomware', 'lat': 51.1657, 'lon': 10.4515},
+                'akira': {'name': 'Akira', 'country': 'Unknown', 'type': 'Ransomware', 'lat': 51.1657, 'lon': 10.4515},
+                'medusa': {'name': 'Medusa', 'country': 'Unknown', 'type': 'Ransomware', 'lat': 51.1657, 'lon': 10.4515},
+                
+                # Cybercrime Groups
+                'fin7': {'name': 'FIN7', 'country': 'Russia', 'type': 'Cybercrime', 'lat': 55.7558, 'lon': 37.6173},
+                'fin8': {'name': 'FIN8', 'country': 'Unknown', 'type': 'Cybercrime', 'lat': 51.1657, 'lon': 10.4515},
+                'fin12': {'name': 'FIN12', 'country': 'Russia', 'type': 'Cybercrime', 'lat': 55.7558, 'lon': 37.6173},
+                'scattered spider': {'name': 'Scattered Spider', 'country': 'USA', 'type': 'Cybercrime', 'lat': 37.0902, 'lon': -95.7129},
+                'ta505': {'name': 'TA505', 'country': 'Russia', 'type': 'Cybercrime', 'lat': 55.7558, 'lon': 37.6173},
+                'wizard spider': {'name': 'Wizard Spider', 'country': 'Russia', 'type': 'Cybercrime', 'lat': 55.7558, 'lon': 37.6173},
+                'silence': {'name': 'Silence', 'country': 'Russia', 'type': 'Cybercrime', 'lat': 55.7558, 'lon': 37.6173},
+                
+                # Hacktivism
+                'anonymous': {'name': 'Anonymous', 'country': 'Worldwide', 'type': 'Hacktivist', 'lat': 51.1657, 'lon': 10.4515},
+                'killnet': {'name': 'KillNet', 'country': 'Russia', 'type': 'Hacktivist', 'lat': 55.7558, 'lon': 37.6173},
+                'anonymous sudan': {'name': 'Anonymous Sudan', 'country': 'Sudan', 'type': 'Hacktivist', 'lat': 15.5007, 'lon': 32.5599},
             }
             
+            actors_found = {}  # Use dict to prevent duplicates and aggregate data
+            
             for row in rows:
-                text = (row['title'] + ' ' + (row['summary'] or '')).lower()
+                text = ' '.join([
+                    row['title'] or '',
+                    row['summary'] or '',
+                    row['content'] or ''
+                ]).lower()
                 
-                for actor, info in threat_actors.items():
-                    if actor.lower() in text:
-                        actors.append({
-                            'actor': actor,
-                            'country': info['country'],
-                            'type': info['type'],
-                            'lat': info['lat'],
-                            'lon': info['lon'],
-                            'article_title': row['title'],
+                # Search for threat actor mentions
+                for actor_key, actor_info in threat_actor_db.items():
+                    if actor_key in text:
+                        actor_name = actor_info['name']
+                        
+                        if actor_name not in actors_found:
+                            actors_found[actor_name] = {
+                                'actor': actor_name,
+                                'country': actor_info['country'],
+                                'type': actor_info['type'],
+                                'lat': actor_info['lat'],
+                                'lon': actor_info['lon'],
+                                'articles': [],
+                                'incident_count': 0
+                            }
+                        
+                        # Add article reference
+                        actors_found[actor_name]['articles'].append({
+                            'title': row['title'],
                             'date': row['published_date'],
-                            'article_id': row['id']
+                            'id': row['id']
                         })
-                        break  # Only count once per article
+                        actors_found[actor_name]['incident_count'] += 1
+            
+            # Convert to list and format for frontend
+            result = []
+            for actor_name, data in actors_found.items():
+                result.append({
+                    'actor': data['actor'],
+                    'country': data['country'],
+                    'type': data['type'],
+                    'lat': data['lat'],
+                    'lon': data['lon'],
+                    'incident_count': data['incident_count'],
+                    'articles': data['articles'][:5],  # Limit to 5 most recent
+                    'article_title': data['articles'][0]['title'] if data['articles'] else '',
+                    'date': data['articles'][0]['date'] if data['articles'] else '',
+                    'article_id': data['articles'][0]['id'] if data['articles'] else None
+                })
+            
+            # Sort by incident count
+            result.sort(key=lambda x: x['incident_count'], reverse=True)
             
             conn.close()
-            return actors[:limit]
+            return result[:limit]
             
         except Exception as e:
             print(f"❌ Error in get_threat_actor_activity: {e}")
+            import traceback
+            traceback.print_exc()
             conn.close()
             return []
 

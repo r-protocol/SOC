@@ -33,27 +33,20 @@ function ThreatActorGeoMap({ timeRange }) {
       .then(res => {
         setActors(res.data);
         
-        // Calculate statistics
+        // Backend now returns aggregated data with incident_count
+        // Convert to stats format for component compatibility
         const stats = {};
         res.data.forEach(actor => {
           const key = `${actor.actor}-${actor.country}`;
-          if (!stats[key]) {
-            stats[key] = {
-              actor: actor.actor,
-              country: actor.country,
-              type: actor.type,
-              lat: actor.lat,
-              lon: actor.lon,
-              count: 0,
-              articles: []
-            };
-          }
-          stats[key].count++;
-          stats[key].articles.push({
-            title: actor.article_title,
-            date: actor.date,
-            id: actor.article_id
-          });
+          stats[key] = {
+            actor: actor.actor,
+            country: actor.country,
+            type: actor.type,
+            lat: actor.lat,
+            lon: actor.lon,
+            count: actor.incident_count || 1,
+            articles: actor.articles || []
+          };
         });
         
         setActorStats(stats);
