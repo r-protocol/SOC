@@ -7,9 +7,12 @@ function RecentThreats() {
   const [threats, setThreats] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedThreat, setSelectedThreat] = useState(null);
+  const [severityFilter, setSeverityFilter] = useState('ALL');
 
   useEffect(() => {
-    axios.get(`${API_BASE}/recent-threats?limit=20`)
+    setLoading(true);
+    const riskParam = severityFilter === 'ALL' ? '' : `&risk=${severityFilter}`;
+    axios.get(`${API_BASE}/recent-threats?limit=50${riskParam}`)
       .then(res => {
         setThreats(res.data);
         setLoading(false);
@@ -18,7 +21,7 @@ function RecentThreats() {
         console.error(err);
         setLoading(false);
       });
-  }, []);
+  }, [severityFilter]);
 
   const handleThreatClick = (threatId) => {
     axios.get(`${API_BASE}/article/${threatId}`)
@@ -31,26 +34,68 @@ function RecentThreats() {
 
   return (
     <div className="card">
-      <div className="card-title">🔥 Recent High-Priority Threats</div>
-      {threats.map(threat => (
-        <div 
-          key={threat.id} 
-          className="threat-card"
-          onClick={() => handleThreatClick(threat.id)}
-        >
-          <div className="threat-header">
-            <span className={`risk-badge ${threat.risk_level}`}>
-              {threat.risk_level}
-            </span>
-            <div className="threat-title">{threat.title}</div>
-          </div>
-          <div className="threat-meta">
-            <span className="category-tag">{threat.category}</span>
-            <span>{new Date(threat.published_date).toLocaleDateString()}</span>
-            <span>🎯 {threat.ioc_count} IOCs</span>
-          </div>
+      <div className="card-title">
+        <span>🔥 Recent Threats</span>
+        <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
+          {['ALL', 'HIGH', 'MEDIUM', 'LOW'].map(level => (
+            <button
+              key={level}
+              onClick={() => setSeverityFilter(level)}
+              style={{
+                padding: '6px 16px',
+                borderRadius: '6px',
+                border: severityFilter === level ? '2px solid #4285f4' : '2px solid #3a3a4a',
+                background: severityFilter === level ? '#4285f420' : '#2a2a3a',
+                color: severityFilter === level ? '#4285f4' : '#a1a1aa',
+                cursor: 'pointer',
+                fontSize: '12px',
+                fontWeight: severityFilter === level ? '600' : '400',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseEnter={(e) => {
+                if (severityFilter !== level) {
+                  e.target.style.background = '#3a3a4a';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (severityFilter !== level) {
+                  e.target.style.background = '#2a2a3a';
+                }
+              }}
+            >
+              {level}
+            </button>
+          ))}
         </div>
-      ))}
+      </div>
+      
+      <div style={{ marginTop: '16px', maxHeight: '600px', overflowY: 'auto' }}>
+        {threats.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '20px', color: '#a1a1aa' }}>
+            No threats found for {severityFilter} severity
+          </div>
+        ) : (
+          threats.map(threat => (
+            <div 
+              key={threat.id} 
+              className="threat-card"
+              onClick={() => handleThreatClick(threat.id)}
+            >
+              <div className="threat-header">
+                <span className={`risk-badge ${threat.risk_level}`}>
+                  {threat.risk_level}
+                </span>
+                <div className="threat-title">{threat.title}</div>
+              </div>
+              <div className="threat-meta">
+                <span className="category-tag">{threat.category}</span>
+                <span>{new Date(threat.published_date).toLocaleDateString()}</span>
+                <span>🎯 {threat.ioc_count} IOCs</span>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
 
       {selectedThreat && (
         <div className="modal" onClick={() => setSelectedThreat(null)}>
