@@ -1,4 +1,0 @@
-DeviceProcessEvents
-| where ProcessCommandLine contains 'awsconfig' and not (ProcessCommandLine contains 'amazon' or ProcessCommandLine contains 'AWS') and Timestamp > ago(7d)
-| summarize CountOfProcesses = count() by Account, CommandLine
-| where CountOfProcesses > 1
