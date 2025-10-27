@@ -17,6 +17,51 @@ class ThreatIntelDB:
             print(f"❌ WARNING: Database not found at: {self.db_path}")
         else:
             print(f"✅ Database found!")
+
+    @staticmethod
+    def _cvss_to_severity(score: float) -> str:
+        """Map CVSS base score (0.0-10.0) to severity label.
+        Low: 0.1–3.9, Medium: 4.0–6.9, High: 7.0–8.9, Critical: 9.0–10.0, 0.0 => LOW.
+        """
+        try:
+            s = float(score)
+        except Exception:
+            return 'UNKNOWN'
+        if s <= 0:
+            return 'LOW'
+        if 0.0 < s <= 3.9:
+            return 'LOW'
+        if 4.0 <= s <= 6.9:
+            return 'MEDIUM'
+        if 7.0 <= s <= 8.9:
+            return 'HIGH'
+        if 9.0 <= s <= 10.0:
+            return 'CRITICAL'
+        return 'UNKNOWN'
+
+    @staticmethod
+    def _extract_cvss_score(text: str):
+        """Best-effort CVSS score extraction from arbitrary text/context.
+        Looks for patterns like 'CVSS 9.8', 'CVSS v3.1 Base Score: 8.6', or 'Base score 7.5'.
+        Returns float or None if not found.
+        """
+        if not text:
+            return None
+        patterns = [
+            r"CVSS\s*(?:v?[23](?:\.[01])?)?\s*(?:Base\s*Score:?)?\s*([0-9]{1,2}(?:\.[0-9])?)",
+            r"Base\s*Score\s*:?\s*([0-9]{1,2}(?:\.[0-9])?)",
+            r"CVSS\s*Score\s*:?\s*([0-9]{1,2}(?:\.[0-9])?)",
+        ]
+        for pat in patterns:
+            m = re.search(pat, text, re.IGNORECASE)
+            if m:
+                try:
+                    val = float(m.group(1))
+                    if 0.0 <= val <= 10.0:
+                        return val
+                except Exception:
+                    continue
+        return None
     
     def get_connection(self):
         """Get database connection"""
@@ -71,6 +116,13 @@ class ThreatIntelDB:
             except:
                 total_iocs = 0
             
+            # Get total KQL queries if kql_queries table exists
+            try:
+                cursor.execute("SELECT COUNT(*) as total FROM kql_queries")
+                total_kql = cursor.fetchone()['total']
+            except:
+                total_kql = 0
+            
             conn.close()
             
             return {
@@ -79,7 +131,8 @@ class ThreatIntelDB:
                 "filtered_items": recent_articles,
                 "failed_runs": 0,
                 "critical_threats": critical_count,
-                "total_iocs": total_iocs
+                "total_iocs": total_iocs,
+                "total_kql": total_kql
             }
         except Exception as e:
             print(f"❌ Error in get_pipeline_overview: {e}")
@@ -90,7 +143,8 @@ class ThreatIntelDB:
                 "filtered_items": 0,
                 "failed_runs": 0,
                 "critical_threats": 0,
-                "total_iocs": 0
+                "total_iocs": 0,
+                "total_kql": 0
             }
     
     def get_risk_distribution(self):
@@ -130,6 +184,7 @@ class ThreatIntelDB:
                 FROM articles
                 WHERE category IS NOT NULL 
                 AND category != 'Not Cybersecurity Related' 
+                AND category != 'Pending Analysis'
                 AND {date_filter}
                 GROUP BY category
                 ORDER BY count DESC
@@ -863,7 +918,7 @@ class ThreatIntelDB:
                 ORDER BY a.published_date DESC
             """)
             
-            cve_data = defaultdict(lambda: {'count': 0, 'articles': [], 'severity': 'UNKNOWN', 'context': []})
+            cve_data = defaultdict(lambda: {'count': 0, 'articles': [], 'severity': 'UNKNOWN', 'context': [], 'score': None})
             
             for row in cursor.fetchall():
                 cve = row['ioc_value']
@@ -874,11 +929,19 @@ class ThreatIntelDB:
                     'id': row['id']
                 })
                 
-                # Determine severity from article risk
-                if row['threat_risk'] == 'HIGH':
-                    cve_data[cve]['severity'] = 'CRITICAL'
-                elif cve_data[cve]['severity'] == 'UNKNOWN' and row['threat_risk'] == 'MEDIUM':
-                    cve_data[cve]['severity'] = 'HIGH'
+                # Prefer CVSS score from IOC context when present
+                score = self._extract_cvss_score(row['context']) if row['context'] else None
+                if score is not None:
+                    # Keep the highest score seen for this CVE
+                    if cve_data[cve]['score'] is None or score > cve_data[cve]['score']:
+                        cve_data[cve]['score'] = score
+                        cve_data[cve]['severity'] = self._cvss_to_severity(score)
+                else:
+                    # Fallback: infer from article threat risk (approximation)
+                    if row['threat_risk'] == 'HIGH':
+                        cve_data[cve]['severity'] = 'CRITICAL'
+                    elif cve_data[cve]['severity'] in ['UNKNOWN', 'LOW'] and row['threat_risk'] == 'MEDIUM':
+                        cve_data[cve]['severity'] = 'HIGH'
                 
                 if row['context']:
                     cve_data[cve]['context'].append(row['context'])
@@ -890,6 +953,7 @@ class ThreatIntelDB:
                     'cve': cve,
                     'count': data['count'],
                     'severity': data['severity'],
+                    'score': data['score'],
                     'latest_article': data['articles'][0]['title'] if data['articles'] else '',
                     'date': data['articles'][0]['date'] if data['articles'] else '',
                     'context': data['context'][0] if data['context'] else ''

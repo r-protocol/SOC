@@ -21,7 +21,11 @@ function CategoryDistribution({ timeRange }) {
     
     axios.get(`${API_BASE}/category-distribution${timeParams}`)
       .then(res => {
-        setData(res.data);
+        // Exclude placeholder category from the pie chart
+        const filtered = Array.isArray(res.data)
+          ? res.data.filter(item => item?.name !== 'Pending Analysis')
+          : [];
+        setData(filtered);
         setLoading(false);
       })
       .catch(err => {

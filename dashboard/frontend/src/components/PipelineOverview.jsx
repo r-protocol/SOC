@@ -44,6 +44,10 @@ function PipelineOverview({ timeRange }) {
         <div className="kpi-label">IOCs Extracted</div>
         <div className="kpi-value">{data.total_iocs}</div>
       </div>
+      <div className="card kpi-card info">
+        <div className="kpi-label">KQL Generated</div>
+        <div className="kpi-value">{data.total_kql}</div>
+      </div>
       <div className="card kpi-card warning">
         <div className="kpi-label">Recent (7 days)</div>
         <div className="kpi-value">{data.filtered_items}</div>

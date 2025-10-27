@@ -1,0 +1,288 @@
+{
+  "ips": [],
+  "domains": [
+    {
+      "value": "badiwaw.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "balacif.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "barovur.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "basisem.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "bimafu.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "bujoke.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "buloxo.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "bumoyez.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "bupula.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "cajeti.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "cilomum.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "codasal.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "comecal.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "dawasab.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "derotin.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "dihata.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "dirupun.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "dohigu.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "dubacaj.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "fecotis.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "fipoleb.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "fofudir.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "fulujam.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "ganobaz.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "gerepa.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "gucunug.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "guvafe.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "hakakor.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "hejalij.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "hepide.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "hesovaw.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "hewecas.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "hidusi.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "hireja.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "hoguyum.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "jecubat.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "jegufe.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "joxinu.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "kelowuh.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "kidukes.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "kipitep.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "kirute.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "kogasiv.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "kozoheh.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "kuxizi.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    },
+    {
+      "value": "kuzixi.com",
+      "context": "attacker",
+      "confidence": "medium",
+      "description": "Domain used in Conti ransomware attacks"
+    }
+  ],
+  "urls": [],
+  "hashes": [],
+  "cves": [],
+  "emails": [],
+  "filenames": [],
+  "registry_keys": [],
+  "techniques": []
+}

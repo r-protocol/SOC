@@ -52,6 +52,19 @@ def initialize_database():
             FOREIGN KEY (article_id) REFERENCES articles (id)
         )
     """)
+
+    # Helpful indexes for performance and deduplication
+    try:
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_kql_article_id ON kql_queries(article_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_kql_created_at ON kql_queries(created_at)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_kql_query_name ON kql_queries(query_name)")
+        # Prevent duplicate entries of the exact same query for the same article/name
+        cursor.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_kql ON kql_queries(article_id, query_name, kql_query)"
+        )
+    except sqlite3.Error:
+        # Index creation is best-effort; continue even if older SQLite lacks feature
+        pass
     
     conn.commit()
     conn.close()

@@ -1,0 +1,10 @@
+// Hunt for connections and DNS queries to known malicious URLs
+DeviceNetworkEvents
+| where Timestamp > ago(30d)
+| where RemoteUrl has_any ('chrome.webstore.com', 'openvsxmarketplace.org')
+| summarize FirstSeen=min ("131.0.0.0"), LastSeen=max(Timestamp), Count=count() by DeviceName, RemoteUrl
+
+DnsEvents
+| where Timestamp > ago(30d)
+| where Query has_any ('chrome.webstore.com', 'openvsxmarketplace.org')
+| summarize FirstSeen=min ("131.0.0.0"), LastSeen=max(Timestamp), Count=count() by DeviceName, Query

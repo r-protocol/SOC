@@ -64,7 +64,7 @@ RSS_FEEDS = [
     "https://blog.1password.com/rss/"
 ]
 DATABASE_PATH = "threat_intel.db"
-OLLAMA_MODEL = "deepseek-coder-v2:16b"  # Specialized coding model - better for IOC extraction & KQL
+OLLAMA_MODEL = "deepseek-coder-v2:16b"  # Better for strict classification and IOC extraction
 OLLAMA_HOST = "http://localhost:11434"
 TEMPLATE_DOCX_PATH = "template.docx"
 OUTPUT_DOCX_PATH = f"Threat_Intelligence_Report_{datetime.date.today()}.docx"
@@ -80,6 +80,9 @@ ENABLE_KQL_GENERATION = True
 KQL_EXPORT_DIR = "kql_queries"
 KQL_EXPORT_ENABLED = True
 KQL_TIMEFRAME_DAYS = 30  # Default lookback period for queries
+KQL_DEVICE_GROUPS = []  # Optional device group scoping for generated hunts
+KQL_MIN_EVENT_SEVERITY = None  # Minimum severity filter for applicable tables
+KQL_RESULT_LIMIT = 500  # Default row cap applied to generated queries
 
 # LLM-Enhanced KQL Settings
 KQL_USE_LLM = True  # Use LLM for IOC extraction and query generation (recommended)
@@ -91,3 +94,14 @@ KQL_FALLBACK_TO_REGEX = True  # Use regex if LLM fails (recommended)
 # IOC Extraction Settings
 AUTO_EXTRACT_IOCS = True  # Automatically extract IOCs during analysis (without requiring KQL generation)
 EXTRACT_IOCS_FOR_RISK_LEVELS = ['HIGH', 'MEDIUM']  # Only extract IOCs for these risk levels (set to [] for all)
+
+# Per-phase multithreading settings
+ENABLE_PHASED_MULTITHREADING = True  # When True, each phase runs concurrently across items
+# Default thread pool sizes per phase (tune based on your machine and Ollama throughput)
+THREADS_FETCH = 10
+THREADS_FILTER = 8
+THREADS_ANALYZE = 6
+THREADS_IOC = 6
+
+# Verbose output (can be enabled at runtime with --verbose or -v)
+VERBOSE = False

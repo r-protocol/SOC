@@ -264,6 +264,7 @@ pip install -r requirements.txt
 | `--kql` or `--auto-kql` | Auto-generate KQL queries without prompt |
 | `-s <URL>` or `--source <URL>` | Process single article from URL |
 | `-debug` | Enable debug mode |
+| `--verbose` or `-v` | Show per-article progress lines during each phase |
 | `--help` or `-h` | Show help message with all commands |
 | **Database Query Commands** ||
 | `--stats` | Display database statistics and insights |

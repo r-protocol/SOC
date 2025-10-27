@@ -3,8 +3,10 @@ import requests
 import json
 import re
 import sys
-from src.config import OLLAMA_MODEL, OLLAMA_HOST
-from src.utils.logging_utils import BColors
+from urllib.parse import urlparse
+from src.config import OLLAMA_MODEL, OLLAMA_HOST, THREADS_ANALYZE, ENABLE_PHASED_MULTITHREADING
+from src.utils.logging_utils import BColors, log_debug
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 def repair_and_parse_json(raw_text, debug_title=None):
     """Enhanced JSON repair with multiple strategies"""
@@ -78,6 +80,12 @@ def repair_and_parse_json(raw_text, debug_title=None):
         return None
 
 def analyze_article_with_llm(article, retry_callback=None):
+    # Verbose: announce which article is being analyzed
+    try:
+        host = urlparse(article.get('url', '')).netloc
+    except Exception:
+        host = ''
+    log_debug(f"Analyzing: {article.get('title','(untitled)')[:80]}" + (f" [{host}]" if host else ""))
     prompt = f"""You are a cybersecurity threat intelligence analyst. You must respond ONLY with valid JSON. No markdown, no explanations, no extra text.
 
 CRITICAL RULES:
@@ -307,5 +315,41 @@ def analyze_articles_sequential(articles):
         update_progress(processed_articles, total_articles, "Analyzing Articles")
     
     sys.stdout.write('\n')  # End progress bar line
+    sys.stdout.flush()
+    return analyzed_articles
+
+def analyze_articles_parallel(articles, max_workers=None):
+    """Parallel article analysis using threads; maintains per-phase ordering semantics for DB/storage later."""
+    analyzed_articles = []
+    total = len(articles)
+    processed = 0
+    progress_bar_width = 50
+
+    def print_progress(current):
+        percent = int((current / total) * 100) if total else 100
+        filled_length = int(progress_bar_width * percent // 100)
+        bar = '█' * filled_length + '-' * (progress_bar_width - filled_length)
+        sys.stdout.write(f"\rAnalyzing Articles |{bar}| {percent}% ({current}/{total})")
+        sys.stdout.flush()
+
+    print_progress(0)
+    workers = max_workers or THREADS_ANALYZE
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        # Dispatch all analyses
+        future_to_article = {executor.submit(analyze_article_with_llm, a): a for a in articles}
+        for future in as_completed(future_to_article):
+            article = future_to_article[future]
+            try:
+                llm_analysis, _ = future.result()
+            except Exception:
+                llm_analysis = None
+            if llm_analysis:
+                article.update(llm_analysis)
+                analyzed_articles.append(article)
+                sys.stdout.write(f"\n{BColors.OKGREEN}[ANALYZED]{BColors.ENDC} {article['title']} (Risk: {article.get('threat_risk')})\n")
+            processed += 1
+            print_progress(processed)
+
+    sys.stdout.write('\n')
     sys.stdout.flush()
     return analyzed_articles

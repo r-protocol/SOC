@@ -1,0 +1,2 @@
+DeviceProcessEvents
+| where CommandLine contains 'reg' or CommandLine contains 'schtasks' or CommandLine contains 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command'

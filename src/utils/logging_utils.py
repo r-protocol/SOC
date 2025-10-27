@@ -24,3 +24,12 @@ def log_error(message):
 
 def log_step(step_number, message):
     print(f"\n{BColors.BOLD}{BColors.HEADER}--- PHASE {step_number}: {message} ---{BColors.ENDC}")
+
+def log_debug(message):
+    """Verbose debug logging, enabled when config.VERBOSE is True."""
+    try:
+        from src.config import VERBOSE  # late import to avoid cycles
+    except Exception:
+        VERBOSE = False
+    if VERBOSE:
+        print(f"{BColors.OKBLUE}[DEBUG]{BColors.ENDC} {message}")

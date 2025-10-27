@@ -1,0 +1,4 @@
+DeviceFileEvents
+| where FileName contains 'kaitai' and Extension == 'exe'
+| where not SourceFileName matches '*010 Editor*' and not SourceFileName matches '*format-bytes.py*'
+| summarize Count = count() by DeviceName, FileName

@@ -1,8 +1,10 @@
 # filtering.py
 import requests
 import sys
-from src.config import OLLAMA_MODEL, OLLAMA_HOST
-from src.utils.logging_utils import log_success, BColors
+from urllib.parse import urlparse
+from src.config import OLLAMA_MODEL, OLLAMA_HOST, THREADS_FILTER, ENABLE_PHASED_MULTITHREADING
+from src.utils.logging_utils import log_success, BColors, log_debug
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 def filter_articles_sequential(articles):
     relevant_articles = []
@@ -13,24 +15,33 @@ def filter_articles_sequential(articles):
     processed_articles = 0
     progress_bar_width = 50
     def print_progress_bar(current, total, phase_desc, messages=None):
-        # First, clear the previous progress bar
-        sys.stdout.write('\r' + ' ' * 100 + '\r')  # Clear line
-        
-        # Print any new status messages
+        # Clear the current bar line and redraw to keep a single persistent bar
+        sys.stdout.write('\r\033[K')
+        # Print any new status messages just above the bar
         if messages:
             for msg in messages:
-                print(msg)
-
-        # Print the progress bar at the bottom
+                sys.stdout.write(f"{msg}\n")
+        # Draw the progress bar
         percent = int((current / total) * 100) if total else 100
         filled_length = int(progress_bar_width * percent // 100)
         bar = '█' * filled_length + '-' * (progress_bar_width - filled_length)
-        sys.stdout.write(f"\r{phase_desc} |{bar}| {percent}% ({current}/{total})")
+        sys.stdout.write(f"{phase_desc} |{bar}| {percent}% ({current}/{total})")
         sys.stdout.flush()
 
     print_progress_bar(0, total_articles, "Filtering Articles")
     status_messages = []
     for article in articles_to_check:
+        # Show which article is being checked
+        try:
+            host = urlparse(article.get('url', '')).netloc
+        except Exception:
+            host = ''
+        print_progress_bar(
+            processed_articles,
+            total_articles,
+            "Filtering Articles",
+            [f"{BColors.OKBLUE}[CHECK]{BColors.ENDC} {article['title']}" + (f" [{host}]" if host else "")] 
+        )
         if is_article_relevant_with_llm(article):
             relevant_articles.append(article)
             status_messages.append(f"{BColors.OKGREEN}[RELEVANT]{BColors.ENDC} {article['title']}")
@@ -48,6 +59,12 @@ def filter_articles_sequential(articles):
     return relevant_articles
 
 def is_article_relevant_with_llm(article):
+    # Verbose: show which article is being evaluated
+    try:
+        host = urlparse(article.get('url', '')).netloc
+    except Exception:
+        host = ''
+    log_debug(f"Filtering: {article.get('title','(untitled)')[:80]}" + (f" [{host}]" if host else ""))
     # STEP 1: Pre-filter with critical keywords (catch obvious cybersecurity content)
     title_lower = article['title'].lower()
     content = article.get('content', '') or ''  # Handle None content
@@ -64,7 +81,10 @@ def is_article_relevant_with_llm(article):
         'credential theft', 'stolen credentials', 'supply chain attack',
         'nation-state', 'apt group', 'threat intelligence', 'ioc', 'indicator of compromise',
         'security flaw', 'remote code execution', 'arbitrary code execution',
-        'ddos', 'denial of service', 'sql injection', 'xss', 'cross-site scripting'
+        'ddos', 'denial of service', 'sql injection', 'xss', 'cross-site scripting',
+        'stealer', 'infostealer', 'threat landscape', 'adversaries are abusing',
+        'adversary', 'incident response', 'security operations', 'ai cli tools',
+        'command line', 'malicious activity', 'threat detection'
     ]
     
     # Check title for critical keywords
@@ -77,14 +97,17 @@ def is_article_relevant_with_llm(article):
         'crowdstrike', 'falcon platform', 'falcon insight', 'falcon defends',
         'falcon exposure', 'microsoft defender', 'microsoft sentinel',
         'sophos firewall', 'palo alto', 'unit 42', 'fortinet', 'fortigate',
-        'check point', 'cisco talos', 'mandiant', 'proofpoint'
+        'check point', 'cisco talos', 'mandiant', 'proofpoint', 'red canary',
+        'intelligence insights', 'threat intelligence', 'commanding attention'
     ]
     
     for vendor in security_vendor_keywords:
         if vendor in title_lower:
             # If vendor + security terms, it's relevant
             security_terms = ['security', 'threat', 'attack', 'vulnerability', 'malware', 
-                            'protection', 'defense', 'stops', 'detects', 'prevents']
+                            'protection', 'defense', 'stops', 'detects', 'prevents',
+                            'adversaries', 'abusing', 'landscape report', 'intelligence insights',
+                            'taxonomy', 'stealer', 'incident response']
             if any(term in title_lower or term in content_preview for term in security_terms):
                 return True
     
@@ -98,9 +121,12 @@ Is this article relevant for security professionals and threat intelligence?
 - Threat actors, APT groups, cybercrime, nation-state hacking
 - Security products/defenses (EDR, XDR, SIEM, firewalls, threat hunting)
 - Attack techniques (phishing, LOLBAS, authentication bypass, privilege escalation)
-- Security vendor research/reports (CrowdStrike, Sophos, Microsoft Security, etc.)
-- Incident response, forensics, SOC operations
+- Security vendor research/reports (CrowdStrike, Sophos, Microsoft Security, Red Canary, etc.)
+- Incident response, forensics, SOC operations, threat detection
 - Security advisories, patches, end-of-support warnings
+- Threat intelligence reports and landscape analysis
+- Malware analysis (stealers, trojans, ransomware families)
+- Adversary tactics, techniques, and procedures (TTPs)
 
 ❌ NO if about:
 - Shopping deals, gift guides, product reviews (phones, TVs, gadgets)
@@ -165,7 +191,9 @@ def is_article_relevant_keywords(article):
         'phishing', 'ddos', 'crowdstrike', 'falcon', 'patch tuesday',
         'authentication bypass', 'privilege escalation', 'ntlm', 'ldap',
         'living-off-the-land', 'exposure management', 'endpoint detection',
-        'threat landscape', 'ecrime', 'apt', 'security flaw'
+        'threat landscape', 'ecrime', 'apt', 'security flaw', 'stealer',
+        'infostealer', 'adversaries', 'abusing', 'incident response',
+        'threat detection', 'intelligence insights', 'taxonomy', 'commanding attention'
     ]
     
     for keyword in critical_title_keywords:
@@ -177,7 +205,8 @@ def is_article_relevant_keywords(article):
         'crowdstrike', 'falcon platform', 'falcon insight', 'falcon defends',
         'falcon exposure', 'sophos firewall', 'palo alto', 'fortinet',
         'check point', 'cisco security', 'microsoft defender', 'sentinel',
-        'kaspersky', 'bitdefender', 'trend micro', 'mcafee', 'eset'
+        'kaspersky', 'bitdefender', 'trend micro', 'mcafee', 'eset',
+        'red canary', 'redcanary'
     ]
     
     for vendor in vendor_keywords_in_title:
@@ -204,7 +233,11 @@ def is_article_relevant_keywords(article):
         'buffer overflow', 'mitre att&ck', 'data breach', 'security patch',
         'nation-state', 'cyber attack', 'cyber threat', 'threat hunting',
         'soc ', 'security operation', 'git vulnerability', 'publicly disclosed',
-        'lolbins', 'threat actor', 'botnet', 'domain user to system'
+        'lolbins', 'threat actor', 'botnet', 'domain user to system',
+        'stealer', 'infostealer', 'taxonomy', 'adversaries are abusing',
+        'commanding attention', 'intelligence insights', 'landscape report',
+        'atomic stealer', 'odyssey stealer', 'poseidon stealer', 'ai cli tools',
+        'redefining incident response'
     ]
     
     for keyword in extended_keywords:
@@ -213,3 +246,57 @@ def is_article_relevant_keywords(article):
     
     # Default: If no keywords matched, it's not relevant
     return False
+
+def filter_articles_parallel(articles, max_workers=None):
+    """Parallel filtering using threads; preserves per-phase behavior."""
+    articles_to_check = [a for a in articles if a.get('content')]
+    if not articles_to_check:
+        return []
+    total = len(articles_to_check)
+    relevant_articles = []
+    processed = 0
+    progress_bar_width = 50
+
+    def print_progress(current, msg=None):
+        percent = int((current / total) * 100) if total else 100
+        filled_length = int(progress_bar_width * percent // 100)
+        bar = '█' * filled_length + '-' * (progress_bar_width - filled_length)
+        # Clear current bar line and optionally print a status line above
+        sys.stdout.write('\r\033[K')
+        if msg:
+            sys.stdout.write(f"{msg}\n")
+        # Redraw the single persistent bar
+        sys.stdout.write(f"Filtering Articles |{bar}| {percent}% ({current}/{total})")
+        sys.stdout.flush()
+
+    print_progress(0)
+    workers = max_workers or THREADS_FILTER
+    # Run relevance checks concurrently
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        future_to_article = {}
+        for a in articles_to_check:
+            # Announce the article being checked as it's submitted
+            try:
+                host = urlparse(a.get('url', '')).netloc
+            except Exception:
+                host = ''
+            print_progress(processed, msg=f"{BColors.OKBLUE}[CHECK]{BColors.ENDC} {a['title']}" + (f" [{host}]" if host else ""))
+            future = executor.submit(is_article_relevant_with_llm, a)
+            future_to_article[future] = a
+        for future in as_completed(future_to_article):
+            article = future_to_article[future]
+            try:
+                is_rel = future.result()
+            except Exception:
+                is_rel = False
+            if is_rel:
+                relevant_articles.append(article)
+                # brief success line without breaking progress
+                print_progress(processed, msg=f"{BColors.OKGREEN}[RELEVANT]{BColors.ENDC} {article['title']}")
+            processed += 1
+            print_progress(processed)
+
+    sys.stdout.write('\n')
+    sys.stdout.flush()
+    log_success(f"Found {len(relevant_articles)} new relevant articles to analyze.")
+    return relevant_articles

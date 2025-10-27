@@ -3,9 +3,9 @@ import sys
 import datetime
 import sqlite3
 from src.utils.db_utils import initialize_database, get_existing_urls, store_analyzed_data, store_iocs, store_kql_queries
-from src.core.fetcher import fetch_and_scrape_articles_sequential, fetch_single_article
-from src.core.filtering import filter_articles_sequential
-from src.core.analysis import analyze_articles_sequential
+from src.core.fetcher import fetch_and_scrape_articles_sequential, fetch_single_article, fetch_and_scrape_articles_parallel
+from src.core.filtering import filter_articles_sequential, filter_articles_parallel
+from src.core.analysis import analyze_articles_sequential, analyze_articles_parallel
 from src.core.report import generate_weekly_report, get_last_full_week_dates
 from src.utils.logging_utils import log_step, log_warn, log_info, log_success, log_error, BColors
 from src.config import (
@@ -18,9 +18,11 @@ from src.config import (
     KQL_DEVICE_GROUPS,
     KQL_MIN_EVENT_SEVERITY,
     KQL_RESULT_LIMIT,
+    ENABLE_PHASED_MULTITHREADING,
 )
 from src.core.kql_generator_llm import LLMKQLGenerator
-from src.core.kql_generator import save_queries_to_file, IOCExtractor as RegexIOCExtractor, KQLGenerationOptions
+from src.core.kql_generator import save_queries_to_file, IOCExtractor as RegexIOCExtractor
+from src import config as app_config
 
 
 def get_rolling_date_range(days_back=14):
@@ -30,22 +32,14 @@ def get_rolling_date_range(days_back=14):
     return start_date, end_date
 
 
-def build_kql_options() -> KQLGenerationOptions:
-    """Construct reusable KQL generation options from configuration."""
-    return KQLGenerationOptions(
-        lookback_days=KQL_TIMEFRAME_DAYS,
-        device_groups=list(KQL_DEVICE_GROUPS) if KQL_DEVICE_GROUPS else [],
-        min_severity=KQL_MIN_EVENT_SEVERITY,
-        result_limit=KQL_RESULT_LIMIT,
-    )
+# Legacy options removed: LLMKQLGenerator no longer accepts external options; using defaults
 
 def generate_kql_for_articles(article_ids):
     """Generate KQL queries for analyzed articles using LLM"""
     from src.utils.logging_utils import BColors
     
     log_step("KQL", "Generating KQL Threat Hunting Queries (LLM-Enhanced)")
-    options = build_kql_options()
-    llm_generator = LLMKQLGenerator(options=options)
+    llm_generator = LLMKQLGenerator()
     
     total_iocs = 0
     total_queries = 0
@@ -178,7 +172,7 @@ def process_single_article(url, use_kql=False):
         print(f"\n{BColors.OKCYAN}🤖 LLM-Based IOC Extraction & KQL Generation{BColors.ENDC}")
         print(f"{BColors.OKCYAN}{'='*70}{BColors.ENDC}")
         
-        llm_generator = LLMKQLGenerator(options=build_kql_options())
+        llm_generator = LLMKQLGenerator()
         llm_iocs, llm_queries = llm_generator.generate_all(analyzed_article)
         
         # Display LLM IOCs
@@ -252,6 +246,56 @@ def process_single_article(url, use_kql=False):
                     log_success(f"Stored {stored_queries} KQL queries in database for article ID {stored_article_id}")
             except Exception as e:
                 log_warn(f"Failed to store KQL queries: {e}")
+
+        # Also export IOCs to simple text/JSON files for easy copy/paste and auditing
+        try:
+            import os, json, re
+            export_dir = os.path.join("exports")
+            os.makedirs(export_dir, exist_ok=True)
+            # Create a safe base name using article ID if available; otherwise, a slug of the title
+            def slugify(text):
+                return re.sub(r"[^a-zA-Z0-9_-]+", "_", (text or "article").strip())[:64]
+            base = f"article_{stored_article_id}" if stored_article_id else slugify(analyzed_article.get('title', 'article'))
+
+            # Collect by type (domains, ips, urls)
+            def values_for(key):
+                items = llm_iocs.get(key, [])
+                vals = []
+                for it in items:
+                    if isinstance(it, dict):
+                        v = it.get('value')
+                    else:
+                        v = str(it)
+                    if v:
+                        vals.append(v)
+                # de-duplicate, preserve order
+                seen = set(); out = []
+                for v in vals:
+                    if v not in seen:
+                        seen.add(v); out.append(v)
+                return out
+
+            domains = values_for('domains')
+            ips = values_for('ips')
+            urls = values_for('urls')
+
+            if domains:
+                with open(os.path.join(export_dir, f"{base}_domains.txt"), "w", encoding="utf-8") as f:
+                    f.write("\n".join(domains))
+            if ips:
+                with open(os.path.join(export_dir, f"{base}_ips.txt"), "w", encoding="utf-8") as f:
+                    f.write("\n".join(ips))
+            if urls:
+                with open(os.path.join(export_dir, f"{base}_urls.txt"), "w", encoding="utf-8") as f:
+                    f.write("\n".join(urls))
+
+            # Save full structured IOCs
+            with open(os.path.join(export_dir, f"{base}_iocs.json"), "w", encoding="utf-8") as f:
+                json.dump(llm_iocs, f, ensure_ascii=False, indent=2)
+
+            log_success(f"Exported IOC files to '{export_dir}/' (prefix: {base}_) ")
+        except Exception as e:
+            log_warn(f"Failed to export IOC files: {e}")
         
         # Summary comparison
         print(f"\n{BColors.HEADER}{'='*70}{BColors.ENDC}")
@@ -300,7 +344,10 @@ def main_pipeline():
     
     # Phase 1: Fetch and Scrape all new articles using 2-week rolling window
     log_step(1, "Fetching and Scraping New Articles")
-    new_articles = fetch_and_scrape_articles_sequential(existing_urls, fetch_start_date, fetch_end_date)
+    if ENABLE_PHASED_MULTITHREADING:
+        new_articles = fetch_and_scrape_articles_parallel(existing_urls, fetch_start_date, fetch_end_date)
+    else:
+        new_articles = fetch_and_scrape_articles_sequential(existing_urls, fetch_start_date, fetch_end_date)
     
     # Apply article limit if specified
     if article_limit and len(new_articles) > article_limit:
@@ -309,14 +356,18 @@ def main_pipeline():
     
     # Phase 2: Filter for relevant articles
     log_step(2, "Filtering New Articles for Cybersecurity Relevance")
-    relevant_articles = filter_articles_sequential(new_articles)
+    relevant_articles = (filter_articles_parallel(new_articles)
+                         if ENABLE_PHASED_MULTITHREADING else
+                         filter_articles_sequential(new_articles))
     
     article_ids = []
     if relevant_articles:
         # Phase 3: Analyze relevant articles
         log_step(3, "Analyzing New Relevant Articles with LLM")
-        analyzed_data_list = analyze_articles_sequential(relevant_articles)
-        
+        analyzed_data_list = (analyze_articles_parallel(relevant_articles)
+                              if ENABLE_PHASED_MULTITHREADING else
+                              analyze_articles_sequential(relevant_articles))
+
         if analyzed_data_list:
             # Phase 4: Store results in the database
             log_step(4, "Storing New Data in Database")
@@ -326,29 +377,55 @@ def main_pipeline():
             from src.config import AUTO_EXTRACT_IOCS, EXTRACT_IOCS_FOR_RISK_LEVELS
             if AUTO_EXTRACT_IOCS and article_ids:
                 log_step("4.5", "Auto-Extracting IOCs from Analyzed Articles")
-                llm_generator = LLMKQLGenerator(options=build_kql_options())
+                llm_generator = LLMKQLGenerator()
                 total_iocs_extracted = 0
                 articles_with_iocs = 0
                 
-                for article_id, article_data in article_ids:
-                    # Check if we should extract IOCs for this risk level
-                    article_risk = article_data.get('threat_risk', 'LOW')
-                    if EXTRACT_IOCS_FOR_RISK_LEVELS and article_risk not in EXTRACT_IOCS_FOR_RISK_LEVELS:
-                        continue
-                    
-                    try:
-                        # Extract IOCs only (no KQL queries yet)
-                        iocs = llm_generator.extract_iocs_with_llm(article_data)
-                        ioc_count = sum(len(iocs.get(key, [])) for key in iocs)
-                        
-                        if ioc_count > 0:
-                            stored_iocs = store_iocs(article_id, iocs)
-                            total_iocs_extracted += stored_iocs
-                            articles_with_iocs += 1
-                            log_info(f"Extracted {stored_iocs} IOCs from '{article_data['title']}'")
-                    except Exception as e:
-                        log_warn(f"Failed to extract IOCs from article {article_id}: {e}")
-                        continue
+                if ENABLE_PHASED_MULTITHREADING:
+                    # Parallel IOC extraction per article
+                    from concurrent.futures import ThreadPoolExecutor, as_completed
+                    from src.config import THREADS_IOC
+                    def extract_for(item):
+                        aid, adata = item
+                        risk = adata.get('threat_risk', 'LOW')
+                        if EXTRACT_IOCS_FOR_RISK_LEVELS and risk not in EXTRACT_IOCS_FOR_RISK_LEVELS:
+                            return 0
+                        try:
+                            iocs = llm_generator.extract_iocs_with_llm(adata)
+                            ioc_count = sum(len(iocs.get(key, [])) for key in iocs)
+                            if ioc_count > 0:
+                                stored = store_iocs(aid, iocs)
+                                log_info(f"Extracted {stored} IOCs from '{adata['title']}'")
+                                return stored
+                        except Exception as e:
+                            log_warn(f"Failed to extract IOCs from article {aid}: {e}")
+                        return 0
+                    with ThreadPoolExecutor(max_workers=THREADS_IOC) as ex:
+                        for fut in as_completed([ex.submit(extract_for, it) for it in article_ids]):
+                            try:
+                                stored = fut.result()
+                                if stored > 0:
+                                    total_iocs_extracted += stored
+                                    articles_with_iocs += 1
+                            except Exception:
+                                pass
+                else:
+                    for article_id, article_data in article_ids:
+                        # Check if we should extract IOCs for this risk level
+                        article_risk = article_data.get('threat_risk', 'LOW')
+                        if EXTRACT_IOCS_FOR_RISK_LEVELS and article_risk not in EXTRACT_IOCS_FOR_RISK_LEVELS:
+                            continue
+                        try:
+                            iocs = llm_generator.extract_iocs_with_llm(article_data)
+                            ioc_count = sum(len(iocs.get(key, [])) for key in iocs)
+                            if ioc_count > 0:
+                                stored_iocs = store_iocs(article_id, iocs)
+                                total_iocs_extracted += stored_iocs
+                                articles_with_iocs += 1
+                                log_info(f"Extracted {stored_iocs} IOCs from '{article_data['title']}'")
+                        except Exception as e:
+                            log_warn(f"Failed to extract IOCs from article {article_id}: {e}")
+                            continue
                 
                 if total_iocs_extracted > 0:
                     log_success(f"Auto-extracted {total_iocs_extracted} IOCs from {articles_with_iocs} articles")
@@ -699,6 +776,107 @@ def cmd_export_articles(output_file="articles_export.csv", filter_risk=None, fil
     conn.close()
 
 
+def cmd_list_kql(limit=50, article_id=None, platform=None, ioc_type=None):
+    """List stored KQL queries with optional filters"""
+    print(f"\n{BColors.BOLD}{'='*70}{BColors.ENDC}")
+    print(f"{BColors.BOLD}🧠 KQL Queries in Database{BColors.ENDC}")
+    print(f"{BColors.BOLD}{'='*70}{BColors.ENDC}\n")
+
+    conn = sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+
+    query = (
+        """
+        SELECT k.id, k.query_name, k.query_type, k.platform, k.ioc_type, k.ioc_count,
+               k.created_at, a.id as article_id, a.title
+        FROM kql_queries k
+        LEFT JOIN articles a ON a.id = k.article_id
+        """
+    )
+
+    where = []
+    params = []
+    if article_id:
+        where.append("k.article_id = ?")
+        params.append(article_id)
+    if platform:
+        where.append("LOWER(k.platform) = LOWER(?)")
+        params.append(platform)
+    if ioc_type:
+        where.append("LOWER(k.ioc_type) = LOWER(?)")
+        params.append(ioc_type)
+
+    if where:
+        query += " WHERE " + " AND ".join(where)
+
+    query += " ORDER BY k.created_at DESC LIMIT ?"
+    params.append(limit)
+
+    cursor.execute(query, params)
+    rows = cursor.fetchall()
+
+    if not rows:
+        print(f"{BColors.WARNING}No KQL queries found for the given filters.{BColors.ENDC}\n")
+        conn.close()
+        return
+
+    for i, (kid, name, qtype, plat, itype, icount, created, aid, title) in enumerate(rows, 1):
+        plat_disp = plat or 'N/A'
+        itype_disp = itype or 'N/A'
+        art_disp = f"[{aid}] {title[:60]}..." if aid and title else "(no article)"
+        print(f"{BColors.BOLD}{i}. KQL[{kid}]{BColors.ENDC} {name}")
+        print(f"   Type: {qtype} | Platform: {plat_disp} | IOC: {itype_disp} ({icount or 0}) | Created: {created}")
+        print(f"   Article: {art_disp}")
+        print()
+
+    print(f"{BColors.BOLD}{'─'*70}{BColors.ENDC}")
+    print(f"Showing {len(rows)} queries\n")
+    conn.close()
+
+
+def cmd_show_kql(kql_id):
+    """Show full details for a specific KQL query"""
+    conn = sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT k.id, k.query_name, k.query_type, k.platform, k.ioc_type, k.ioc_count,
+               k.kql_query, k.tables_used, k.created_at, a.id as article_id, a.title
+        FROM kql_queries k
+        LEFT JOIN articles a ON a.id = k.article_id
+        WHERE k.id = ?
+        """,
+        (kql_id,),
+    )
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        print(f"\n{BColors.FAIL}KQL ID {kql_id} not found.{BColors.ENDC}\n")
+        return
+
+    (kid, name, qtype, plat, itype, icount, query_text, tables_used, created, aid, title) = row
+    print(f"\n{BColors.BOLD}{'='*70}{BColors.ENDC}")
+    print(f"{BColors.BOLD}KQL Query Details [{kid}]{BColors.ENDC}")
+    print(f"{BColors.BOLD}{'='*70}{BColors.ENDC}\n")
+    print(f"{BColors.BOLD}Name:{BColors.ENDC} {name}")
+    print(f"{BColors.BOLD}Type:{BColors.ENDC} {qtype}")
+    print(f"{BColors.BOLD}Platform:{BColors.ENDC} {plat or 'N/A'}")
+    print(f"{BColors.BOLD}IOC Type:{BColors.ENDC} {itype or 'N/A'}  |  IOC Count: {icount or 0}")
+    if aid and title:
+        print(f"{BColors.BOLD}Article:{BColors.ENDC} [{aid}] {title}")
+    print(f"{BColors.BOLD}Created:{BColors.ENDC} {created}")
+    if tables_used:
+        try:
+            import json
+            tables = ", ".join(json.loads(tables_used) or [])
+        except Exception:
+            tables = str(tables_used)
+        print(f"{BColors.BOLD}Tables:{BColors.ENDC} {tables}")
+    print(f"\n{BColors.OKCYAN}KQL:{BColors.ENDC}\n{query_text}\n")
+
+
 def cmd_analyze_unanalyzed():
     """Analyze articles in database that haven't been analyzed yet"""
     print(f"\n{BColors.BOLD}{'='*70}{BColors.ENDC}")
@@ -758,7 +936,9 @@ def cmd_analyze_unanalyzed():
     
     # Step 2: Filter for relevance
     log_step(2, "Filtering Articles for Cybersecurity Relevance")
-    relevant_articles = filter_articles_sequential(articles_to_analyze)
+    relevant_articles = (filter_articles_parallel(articles_to_analyze)
+                         if ENABLE_PHASED_MULTITHREADING else
+                         filter_articles_sequential(articles_to_analyze))
     
     if not relevant_articles:
         log_warn("None of the unanalyzed articles are relevant to cybersecurity.")
@@ -782,7 +962,9 @@ def cmd_analyze_unanalyzed():
     
     # Step 3: Analyze with LLM
     log_step(3, "Analyzing Articles with LLM")
-    analyzed_articles = analyze_articles_sequential(relevant_articles)
+    analyzed_articles = (analyze_articles_parallel(relevant_articles)
+                         if ENABLE_PHASED_MULTITHREADING else
+                         analyze_articles_sequential(relevant_articles))
     
     if not analyzed_articles:
         log_error("Failed to analyze articles.")
@@ -828,29 +1010,55 @@ def cmd_analyze_unanalyzed():
     from src.config import AUTO_EXTRACT_IOCS, EXTRACT_IOCS_FOR_RISK_LEVELS
     if AUTO_EXTRACT_IOCS and article_ids:
         log_step("4.5", "Auto-Extracting IOCs from Analyzed Articles")
-        llm_generator = LLMKQLGenerator(options=build_kql_options())
+        llm_generator = LLMKQLGenerator()
         total_iocs_extracted = 0
         articles_with_iocs = 0
         
-        for article_id, article_data in article_ids:
-            # Check if we should extract IOCs for this risk level
-            article_risk = article_data.get('threat_risk', 'LOW')
-            if EXTRACT_IOCS_FOR_RISK_LEVELS and article_risk not in EXTRACT_IOCS_FOR_RISK_LEVELS:
-                continue
-            
-            try:
-                # Extract IOCs only (no KQL queries yet)
-                iocs = llm_generator.extract_iocs_with_llm(article_data)
-                ioc_count = sum(len(iocs.get(key, [])) for key in iocs)
-                
-                if ioc_count > 0:
-                    stored_iocs = store_iocs(article_id, iocs)
-                    total_iocs_extracted += stored_iocs
-                    articles_with_iocs += 1
-                    log_info(f"Extracted {stored_iocs} IOCs from '{article_data['title']}'")
-            except Exception as e:
-                log_warn(f"Failed to extract IOCs from article {article_id}: {e}")
-                continue
+        if ENABLE_PHASED_MULTITHREADING:
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            from src.config import THREADS_IOC
+            def extract_for(item):
+                aid, adata = item
+                risk = adata.get('threat_risk', 'LOW')
+                if EXTRACT_IOCS_FOR_RISK_LEVELS and risk not in EXTRACT_IOCS_FOR_RISK_LEVELS:
+                    return 0
+                try:
+                    iocs = llm_generator.extract_iocs_with_llm(adata)
+                    ioc_count = sum(len(iocs.get(key, [])) for key in iocs)
+                    if ioc_count > 0:
+                        stored = store_iocs(aid, iocs)
+                        log_info(f"Extracted {stored} IOCs from '{adata['title']}'")
+                        return stored
+                except Exception as e:
+                    log_warn(f"Failed to extract IOCs from article {aid}: {e}")
+                return 0
+            with ThreadPoolExecutor(max_workers=THREADS_IOC) as ex:
+                for fut in as_completed([ex.submit(extract_for, it) for it in article_ids]):
+                    try:
+                        stored = fut.result()
+                        if stored > 0:
+                            total_iocs_extracted += stored
+                            articles_with_iocs += 1
+                    except Exception:
+                        pass
+        else:
+            for article_id, article_data in article_ids:
+                # Check if we should extract IOCs for this risk level
+                article_risk = article_data.get('threat_risk', 'LOW')
+                if EXTRACT_IOCS_FOR_RISK_LEVELS and article_risk not in EXTRACT_IOCS_FOR_RISK_LEVELS:
+                    continue
+                try:
+                    # Extract IOCs only (no KQL queries yet)
+                    iocs = llm_generator.extract_iocs_with_llm(article_data)
+                    ioc_count = sum(len(iocs.get(key, [])) for key in iocs)
+                    if ioc_count > 0:
+                        stored_iocs = store_iocs(article_id, iocs)
+                        total_iocs_extracted += stored_iocs
+                        articles_with_iocs += 1
+                        log_info(f"Extracted {stored_iocs} IOCs from '{article_data['title']}'")
+                except Exception as e:
+                    log_warn(f"Failed to extract IOCs from article {article_id}: {e}")
+                    continue
         
         if total_iocs_extracted > 0:
             log_success(f"Auto-extracted {total_iocs_extracted} IOCs from {articles_with_iocs} articles")
@@ -917,7 +1125,10 @@ def cmd_fetch_only():
     
     # Fetch articles
     log_step(1, "Fetching Articles from RSS Feeds")
-    new_articles = fetch_and_scrape_articles_sequential(existing_urls, fetch_start_date, fetch_end_date)
+    if ENABLE_PHASED_MULTITHREADING:
+        new_articles = fetch_and_scrape_articles_parallel(existing_urls, fetch_start_date, fetch_end_date)
+    else:
+        new_articles = fetch_and_scrape_articles_sequential(existing_urls, fetch_start_date, fetch_end_date)
     
     if not new_articles:
         log_warn("No new articles found.")
@@ -1003,6 +1214,9 @@ def cmd_show_help():
 
   {BColors.OKGREEN}python main.py -debug{BColors.ENDC}
       Enable debug mode for troubleshooting
+  
+  {BColors.OKGREEN}python main.py --verbose{BColors.ENDC} or {BColors.OKGREEN}-v{BColors.ENDC}
+      Show per-article progress lines in each phase (more detailed output)
 
 {BColors.HEADER}DATABASE QUERY COMMANDS:{BColors.ENDC}
   {BColors.OKCYAN}--list{BColors.ENDC}
@@ -1035,6 +1249,14 @@ def cmd_show_help():
 
   {BColors.OKCYAN}--stats{BColors.ENDC}
       Show database statistics and threat insights
+
+  {BColors.OKCYAN}--kql-list{BColors.ENDC}
+      List stored KQL queries (filters: --article <ID>, --platform <name>, --type <ioc_type>, --limit <N>)
+      Example: python main.py --kql-list --article 42 --limit 20
+
+  {BColors.OKCYAN}--kql-show <ID>{BColors.ENDC}
+      Show full details for a specific KQL query ID, including the query text
+      Example: python main.py --kql-show 15
 
 {BColors.HEADER}EXPORT COMMANDS:{BColors.ENDC}
   {BColors.WARNING}--export-articles{BColors.ENDC}
@@ -1146,6 +1368,13 @@ def cmd_show_help():
 
 if __name__ == "__main__":
     DEBUG_MODE = "-debug" in sys.argv
+    # Enable verbose logging if requested (set config at runtime)
+    if "--verbose" in sys.argv or "-v" in sys.argv:
+        try:
+            app_config.VERBOSE = True
+            log_info("Verbose mode enabled: per-article status will be printed during phases")
+        except Exception:
+            pass
     
     # Helper function to get argument value
     def get_arg_value(arg_name, default=None):
@@ -1215,6 +1444,31 @@ if __name__ == "__main__":
         risk_filter = get_arg_value("--risk")
         category_filter = get_arg_value("--category")
         cmd_export_articles(output_file=output_file, filter_risk=risk_filter, filter_category=category_filter)
+        sys.exit(0)
+
+    elif "--kql-list" in sys.argv:
+        limit = int(get_arg_value("--limit", 50))
+        article_filter = get_arg_value("--article")
+        platform_filter = get_arg_value("--platform")
+        type_filter = get_arg_value("--type")
+        try:
+            article_id = int(article_filter) if article_filter else None
+        except ValueError:
+            log_error("--article must be an integer ID")
+            sys.exit(1)
+        cmd_list_kql(limit=limit, article_id=article_id, platform=platform_filter, ioc_type=type_filter)
+        sys.exit(0)
+
+    elif "--kql-show" in sys.argv:
+        kql_id = get_arg_value("--kql-show")
+        if not kql_id:
+            log_error("Please provide a KQL ID: --kql-show <id>")
+            sys.exit(1)
+        try:
+            cmd_show_kql(int(kql_id))
+        except ValueError:
+            log_error("KQL ID must be a number")
+            sys.exit(1)
         sys.exit(0)
     
     # Check for single article processing mode

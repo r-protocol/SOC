@@ -1,0 +1,20 @@
+// Hunt for CVEs in network connections, DNS queries, and process executions
+let cves = datatable(cve_value:string)[
+  'CVE-2025-59287',
+  'CVE-2025-62518'
+];
+DeviceNetworkEvents
+| where Timestamp > ago(30d)
+| join kind=leftanti cves in (RemoteUrl)
+| project DeviceName, RemoteUrl, Timestamp
+| union 
+DnsEvents
+| where Timestamp > ago(30d)
+| join kind=leftanti cves in (Query)
+| project DeviceName, Query, Timestamp
+| union 
+ProcessCreate
+| where Timestamp > ago(30d)
+| join kind=leftanti cves in (ParentImage)
+| project DeviceName, ParentImage, Timestamp
+| summarize FirstSeen=min(Timestamp), LastSeen=max(Timestamp), Count=count() by DeviceName, RemoteUrl, Query, ParentImage

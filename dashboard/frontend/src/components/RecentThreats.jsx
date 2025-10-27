@@ -408,8 +408,8 @@ function RecentThreats({ timeRange }) {
         >
           <div
             style={{
-              width: '65vw',
-              maxWidth: '1200px',
+              width: '52vw',
+              maxWidth: '980px',
               height: '85vh',
               background: '#2a2a3e',
               borderRadius: '16px',
