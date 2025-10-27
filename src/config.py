@@ -87,3 +87,7 @@ KQL_LLM_TEMPERATURE = 0.2  # Lower = more consistent structured output
 KQL_LLM_TIMEOUT = 120  # Timeout in seconds for LLM queries
 KQL_CONFIDENCE_THRESHOLD = 'medium'  # Filter IOCs: 'low', 'medium', 'high'
 KQL_FALLBACK_TO_REGEX = True  # Use regex if LLM fails (recommended)
+
+# IOC Extraction Settings
+AUTO_EXTRACT_IOCS = True  # Automatically extract IOCs during analysis (without requiring KQL generation)
+EXTRACT_IOCS_FOR_RISK_LEVELS = ['HIGH', 'MEDIUM']  # Only extract IOCs for these risk levels (set to [] for all)

@@ -261,6 +261,39 @@ def main_pipeline():
             # Phase 4: Store results in the database
             log_step(4, "Storing New Data in Database")
             article_ids = store_analyzed_data(analyzed_data_list)
+            
+            # Phase 4.5: Auto-extract IOCs if enabled
+            from src.config import AUTO_EXTRACT_IOCS, EXTRACT_IOCS_FOR_RISK_LEVELS
+            if AUTO_EXTRACT_IOCS and article_ids:
+                log_step("4.5", "Auto-Extracting IOCs from Analyzed Articles")
+                llm_generator = LLMKQLGenerator()
+                total_iocs_extracted = 0
+                articles_with_iocs = 0
+                
+                for article_id, article_data in article_ids:
+                    # Check if we should extract IOCs for this risk level
+                    article_risk = article_data.get('threat_risk', 'LOW')
+                    if EXTRACT_IOCS_FOR_RISK_LEVELS and article_risk not in EXTRACT_IOCS_FOR_RISK_LEVELS:
+                        continue
+                    
+                    try:
+                        # Extract IOCs only (no KQL queries yet)
+                        iocs = llm_generator.extract_iocs_with_llm(article_data)
+                        ioc_count = sum(len(iocs.get(key, [])) for key in iocs)
+                        
+                        if ioc_count > 0:
+                            stored_iocs = store_iocs(article_id, iocs)
+                            total_iocs_extracted += stored_iocs
+                            articles_with_iocs += 1
+                            log_info(f"Extracted {stored_iocs} IOCs from '{article_data['title']}'")
+                    except Exception as e:
+                        log_warn(f"Failed to extract IOCs from article {article_id}: {e}")
+                        continue
+                
+                if total_iocs_extracted > 0:
+                    log_success(f"Auto-extracted {total_iocs_extracted} IOCs from {articles_with_iocs} articles")
+                else:
+                    log_info("No IOCs found in analyzed articles")
         else:
             log_warn("No new articles were successfully analyzed.")
     else:
@@ -730,6 +763,39 @@ def cmd_analyze_unanalyzed():
     conn.close()
     
     log_success(f"Updated {updated_count} articles in database")
+    
+    # Auto-extract IOCs if enabled
+    from src.config import AUTO_EXTRACT_IOCS, EXTRACT_IOCS_FOR_RISK_LEVELS
+    if AUTO_EXTRACT_IOCS and article_ids:
+        log_step("4.5", "Auto-Extracting IOCs from Analyzed Articles")
+        llm_generator = LLMKQLGenerator()
+        total_iocs_extracted = 0
+        articles_with_iocs = 0
+        
+        for article_id, article_data in article_ids:
+            # Check if we should extract IOCs for this risk level
+            article_risk = article_data.get('threat_risk', 'LOW')
+            if EXTRACT_IOCS_FOR_RISK_LEVELS and article_risk not in EXTRACT_IOCS_FOR_RISK_LEVELS:
+                continue
+            
+            try:
+                # Extract IOCs only (no KQL queries yet)
+                iocs = llm_generator.extract_iocs_with_llm(article_data)
+                ioc_count = sum(len(iocs.get(key, [])) for key in iocs)
+                
+                if ioc_count > 0:
+                    stored_iocs = store_iocs(article_id, iocs)
+                    total_iocs_extracted += stored_iocs
+                    articles_with_iocs += 1
+                    log_info(f"Extracted {stored_iocs} IOCs from '{article_data['title']}'")
+            except Exception as e:
+                log_warn(f"Failed to extract IOCs from article {article_id}: {e}")
+                continue
+        
+        if total_iocs_extracted > 0:
+            log_success(f"Auto-extracted {total_iocs_extracted} IOCs from {articles_with_iocs} articles")
+        else:
+            log_info("No IOCs found in analyzed articles")
     
     # Display summary
     print(f"\n{BColors.BOLD}{'='*70}{BColors.ENDC}")

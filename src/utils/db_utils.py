@@ -108,6 +108,15 @@ def store_iocs(article_id, iocs_dict):
     for ioc_type, ioc_list in iocs_dict.items():
         for ioc in ioc_list:
             try:
+                # Handle both dict and string formats
+                if isinstance(ioc, dict):
+                    ioc_value = ioc.get('value', str(ioc))
+                    ioc_context = ioc.get('context', '')
+                else:
+                    # Simple string IOC
+                    ioc_value = str(ioc)
+                    ioc_context = ''
+                
                 cursor.execute("""
                     INSERT OR IGNORE INTO iocs
                     (article_id, ioc_type, ioc_value, context)
@@ -115,13 +124,15 @@ def store_iocs(article_id, iocs_dict):
                 """, (
                     article_id,
                     ioc_type,
-                    ioc['value'],
-                    ioc.get('context', '')
+                    ioc_value,
+                    ioc_context
                 ))
                 if cursor.rowcount > 0:
                     stored_count += 1
             except sqlite3.Error as e:
-                log_error(f"Error storing IOC {ioc['value']}: {e}")
+                log_error(f"Error storing IOC: {e}")
+            except Exception as e:
+                log_error(f"Unexpected error storing IOC: {e}")
     
     conn.commit()
     conn.close()
