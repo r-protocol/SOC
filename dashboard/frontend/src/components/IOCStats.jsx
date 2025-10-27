@@ -32,10 +32,10 @@ function IOCStats() {
     <div className="card">
       <div className="card-title">🎯 IOC Breakdown</div>
       <ResponsiveContainer width="100%" height={300}>
-        <BarChart data={data} layout="vertical">
+        <BarChart data={data} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#3f3f55" />
           <XAxis type="number" stroke="#a1a1aa" />
-          <YAxis type="category" dataKey="name" stroke="#a1a1aa" />
+          <YAxis type="category" dataKey="name" stroke="#a1a1aa" width={80} />
           <Tooltip 
             contentStyle={{ backgroundColor: '#2a2a3e', border: '1px solid #3f3f55' }}
           />
