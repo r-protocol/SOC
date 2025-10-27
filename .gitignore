@@ -38,6 +38,13 @@ Threat_Intelligence_Report_*.docx
 # Temporary files
 *.tmp
 *.temp
+failed_json_debug.txt
+test_api.html
+
+# Exports (optional - can be tracked if needed)
+exports/*.txt
+exports/*.json
+exports/*.csv
 
 # Frontend build and dependencies
 node_modules/
@@ -45,3 +52,11 @@ dashboard/frontend/node_modules/
 dashboard/frontend/dist/
 dashboard/frontend/.vite/
 dashboard/frontend/node_modules/.vite/
+
+# Test files
+test_*.html
+test_*.py
+
+# Backup files
+*.bak
+*.backup
