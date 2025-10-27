@@ -1,0 +1,7 @@
+// Query options -> lookback: 30d | device groups: ALL | min severity: ALL
+// Hunt for connections to Conti domains
+DeviceNetworkEvents
+| where Timestamp > ago(30d)
+| where RemoteUrl has_any ("badiwaw.com", "balacif.com", "barovur.com", "basisem.com", "bimafu.com", "bujoke.com", "buloxo.com", "bumoyez.com", "bupula.com", "cajeti.com", "cilomum.com", "codasal.com", "comecal.com", "dawasab.com", "derotin.com", "dihata.com", "dirupun.com", "dohigu.com", "dubacaj.com", "fecotis.com", "fipoleb.com", "fofudir.com", "fulujam.com", "ganobaz.com", "gerepa.com", "gucunug.com", "guvafe.com", "hakakor.com", "hejalij.com", "hepide.com", "hesovaw.com", "hewecas.com", "hidusi.com", "hireja.com", "hoguyum.com", "jecubat.com", "jegufe.com", "joxinu.com", "kelowuh.com", "kidukes.com", "kipitep.com", "kirute.com", "kogasiv.com", "kozoheh.com", "kuxizi.com", "kuzixi.com")
+| summarize FirstSeen=min(Timestamp), LastSeen=max(Timestamp), Count=count() by DeviceName, RemoteUrl
+| limit 500

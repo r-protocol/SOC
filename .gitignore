@@ -38,3 +38,10 @@ Threat_Intelligence_Report_*.docx
 # Temporary files
 *.tmp
 *.temp
+
+# Frontend build and dependencies
+node_modules/
+dashboard/frontend/node_modules/
+dashboard/frontend/dist/
+dashboard/frontend/.vite/
+dashboard/frontend/node_modules/.vite/

@@ -388,7 +388,7 @@ function RecentThreats({ timeRange }) {
         )}
       </div>
 
-      {/* Modal - 80% Screen Coverage */}
+      {/* Modal - 65% Screen Coverage */}
       {selectedArticle && (
         <div
           style={{
@@ -408,8 +408,9 @@ function RecentThreats({ timeRange }) {
         >
           <div
             style={{
-              width: '80vw',
-              height: '80vh',
+              width: '65vw',
+              maxWidth: '1200px',
+              height: '85vh',
               background: '#2a2a3e',
               borderRadius: '16px',
               overflow: 'hidden',
@@ -594,59 +595,107 @@ function RecentThreats({ timeRange }) {
                     </div>
                   )}
 
-                  {/* IOCs Section */}
+                  {/* IOCs Section - Grouped by Type */}
                   {modalArticle.iocs && modalArticle.iocs.length > 0 && (
                     <div style={{ marginBottom: '24px' }}>
                       <h3 style={{ color: '#4285f4', fontSize: '16px', marginBottom: '10px', fontWeight: '600' }}>
                         🎯 Indicators of Compromise ({modalArticle.iocs.length})
                       </h3>
-                      <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
-                        {modalArticle.iocs.map((ioc, idx) => (
-                          <div 
-                            key={idx} 
-                            style={{
-                              padding: '12px',
-                              backgroundColor: '#1e1e2e',
-                              margin: '8px 0',
-                              borderRadius: '6px',
-                              borderLeft: '3px solid #00d9c0'
-                            }}
-                          >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                              <span style={{ 
-                                color: '#00d9c0', 
-                                fontWeight: '700',
-                                fontSize: '11px',
-                                textTransform: 'uppercase',
-                                letterSpacing: '0.5px'
-                              }}>
-                                {ioc.ioc_type}
-                              </span>
-                            </div>
-                            <div style={{ 
-                              color: '#e0e0e0', 
-                              fontFamily: 'monospace',
-                              fontSize: '13px',
-                              wordBreak: 'break-all',
-                              background: '#2a2a3e',
-                              padding: '6px 8px',
-                              borderRadius: '4px'
-                            }}>
-                              {ioc.ioc_value}
-                            </div>
-                            {ioc.context && (
-                              <div style={{ 
-                                color: '#a1a1aa', 
-                                fontSize: '11px',
-                                marginTop: '6px',
-                                fontStyle: 'italic'
-                              }}>
-                                Context: {ioc.context}
+                      {(() => {
+                        const iocs = Array.isArray(modalArticle.iocs) ? modalArticle.iocs : [];
+                        const groups = {};
+                        const labelFor = (t) => {
+                          const s = String(t || '').toLowerCase();
+                          if (s.includes('sender') && s.includes('domain')) return 'Sender Domains';
+                          if (s.includes('sender')) return 'Sender Emails';
+                          if (s.includes('email')) return 'Emails';
+                          if (s.includes('domain')) return 'Domains';
+                          if (s === 'ips' || s.includes('ip')) return 'IPs';
+                          if (s.includes('url')) return 'URLs';
+                          if (s.includes('hash') || s.includes('sha') || s.includes('md5')) return 'Hashes';
+                          if (s.includes('cve')) return 'CVEs';
+                          return (t || 'Other').toString();
+                        };
+                        const order = ['Domains', 'IPs', 'URLs', 'Sender Domains', 'Sender Emails', 'Emails', 'Hashes', 'CVEs'];
+                        for (const ioc of iocs) {
+                          const key = labelFor(ioc.ioc_type);
+                          if (!groups[key]) groups[key] = [];
+                          groups[key].push(ioc);
+                        }
+                        const sortedKeys = Object.keys(groups).sort((a, b) => {
+                          const ia = order.indexOf(a);
+                          const ib = order.indexOf(b);
+                          if (ia === -1 && ib === -1) return a.localeCompare(b);
+                          if (ia === -1) return 1;
+                          if (ib === -1) return -1;
+                          return ia - ib;
+                        });
+                        return (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '360px', overflowY: 'auto' }}>
+                            {sortedKeys.map((key) => (
+                              <div key={key} style={{ background: '#1e1e2e', borderRadius: '8px', padding: '12px', border: '1px solid #303042' }}>
+                                <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '8px' }}>
+                                  <span style={{ color: '#00d9c0', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{key}</span>
+                                  <span style={{ color: '#a1a1aa', fontSize: '11px' }}>({groups[key].length})</span>
+                                </div>
+                                {key === 'Domains' ? (
+                                  (() => {
+                                    const domainValues = Array.from(new Set((groups[key] || []).map(i => i.ioc_value).filter(Boolean)));
+                                    const domainText = domainValues.join('\n');
+                                    return (
+                                      <>
+                                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '8px' }}>
+                                          <button
+                                            onClick={() => navigator.clipboard?.writeText(domainText)}
+                                            title="Copy domains to clipboard"
+                                            style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #3a3a4a', background: '#2a2a3e', color: '#e0e0e0', cursor: 'pointer', fontSize: '12px' }}
+                                          >
+                                            Copy
+                                          </button>
+                                        </div>
+                                        <pre style={{
+                                          background: '#2a2a3e',
+                                          color: '#e0e0e0',
+                                          fontFamily: 'monospace',
+                                          fontSize: '12px',
+                                          padding: '10px',
+                                          borderRadius: '6px',
+                                          border: '1px solid #3a3a4a',
+                                          margin: 0,
+                                          whiteSpace: 'pre-wrap',
+                                          wordBreak: 'break-word',
+                                          overflowWrap: 'anywhere'
+                                        }}>{domainText}</pre>
+                                      </>
+                                    );
+                                  })()
+                                ) : (
+                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                    {groups[key].map((ioc, idx) => (
+                                      <div key={idx} style={{
+                                        background: '#2a2a3e',
+                                        color: '#e0e0e0',
+                                        fontFamily: 'monospace',
+                                        fontSize: '12px',
+                                        padding: '5px 7px',
+                                        borderRadius: '6px',
+                                        border: '1px solid #3a3a4a',
+                                        maxWidth: '100%',
+                                        overflowWrap: 'anywhere'
+                                      }}>
+                                        {ioc.ioc_value}
+                                        {ioc.context && (
+                                          <span style={{ color: '#a1a1aa', fontSize: '11px' }}> • {ioc.context}</span>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
-                            )}
+                            ))}
                           </div>
-                        ))}
-                      </div>
+                        );
+                      })()}
                     </div>
                   )}
 
@@ -682,7 +731,10 @@ function RecentThreats({ timeRange }) {
                               fontFamily: 'monospace',
                               color: '#e0e0e0',
                               lineHeight: '1.4',
-                              maxHeight: '200px'
+                              maxHeight: '200px',
+                              whiteSpace: 'pre-wrap',
+                              wordBreak: 'break-word',
+                              overflowWrap: 'anywhere'
                             }}>
                               {query.kql_query || query.query_text}
                             </pre>

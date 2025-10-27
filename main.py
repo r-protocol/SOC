@@ -8,9 +8,19 @@ from src.core.filtering import filter_articles_sequential
 from src.core.analysis import analyze_articles_sequential
 from src.core.report import generate_weekly_report, get_last_full_week_dates
 from src.utils.logging_utils import log_step, log_warn, log_info, log_success, log_error, BColors
-from src.config import ENABLE_KQL_GENERATION, KQL_EXPORT_DIR, KQL_EXPORT_ENABLED, DATABASE_PATH, FETCH_DAYS_BACK
+from src.config import (
+    ENABLE_KQL_GENERATION,
+    KQL_EXPORT_DIR,
+    KQL_EXPORT_ENABLED,
+    DATABASE_PATH,
+    FETCH_DAYS_BACK,
+    KQL_TIMEFRAME_DAYS,
+    KQL_DEVICE_GROUPS,
+    KQL_MIN_EVENT_SEVERITY,
+    KQL_RESULT_LIMIT,
+)
 from src.core.kql_generator_llm import LLMKQLGenerator
-from src.core.kql_generator import save_queries_to_file, IOCExtractor as RegexIOCExtractor
+from src.core.kql_generator import save_queries_to_file, IOCExtractor as RegexIOCExtractor, KQLGenerationOptions
 
 
 def get_rolling_date_range(days_back=14):
@@ -19,12 +29,23 @@ def get_rolling_date_range(days_back=14):
     start_date = end_date - datetime.timedelta(days=days_back)
     return start_date, end_date
 
+
+def build_kql_options() -> KQLGenerationOptions:
+    """Construct reusable KQL generation options from configuration."""
+    return KQLGenerationOptions(
+        lookback_days=KQL_TIMEFRAME_DAYS,
+        device_groups=list(KQL_DEVICE_GROUPS) if KQL_DEVICE_GROUPS else [],
+        min_severity=KQL_MIN_EVENT_SEVERITY,
+        result_limit=KQL_RESULT_LIMIT,
+    )
+
 def generate_kql_for_articles(article_ids):
     """Generate KQL queries for analyzed articles using LLM"""
     from src.utils.logging_utils import BColors
     
     log_step("KQL", "Generating KQL Threat Hunting Queries (LLM-Enhanced)")
-    llm_generator = LLMKQLGenerator()
+    options = build_kql_options()
+    llm_generator = LLMKQLGenerator(options=options)
     
     total_iocs = 0
     total_queries = 0
@@ -124,6 +145,30 @@ def process_single_article(url, use_kql=False):
     print(f"{BColors.OKCYAN}Summary:{BColors.ENDC}")
     print(f"  {analyzed_article.get('summary', 'N/A')[:300]}...")
     print(f"{BColors.OKGREEN}{'='*70}{BColors.ENDC}\n")
+
+    # Step 3.5: Store analyzed article in the database so it's available in the dashboard
+    try:
+        initialize_database()
+        stored = store_analyzed_data([analyzed_article])
+        if stored:
+            stored_article_id = stored[0][0]
+            log_success(f"Stored analyzed article in database (ID: {stored_article_id})")
+        else:
+            log_info("Article already exists in database or could not be stored.")
+            # Attempt to fetch existing ID for subsequent IOC/KQL storage if needed
+            try:
+                import sqlite3
+                conn = sqlite3.connect(DATABASE_PATH)
+                cur = conn.cursor()
+                cur.execute("SELECT id FROM articles WHERE url = ?", (analyzed_article.get('url'),))
+                row = cur.fetchone()
+                stored_article_id = row[0] if row else None
+                conn.close()
+            except Exception:
+                stored_article_id = None
+    except Exception as e:
+        log_warn(f"Failed to store analyzed article in database: {e}")
+        stored_article_id = None
     
     # Step 4: Generate KQL if requested
     if use_kql:
@@ -133,7 +178,7 @@ def process_single_article(url, use_kql=False):
         print(f"\n{BColors.OKCYAN}🤖 LLM-Based IOC Extraction & KQL Generation{BColors.ENDC}")
         print(f"{BColors.OKCYAN}{'='*70}{BColors.ENDC}")
         
-        llm_generator = LLMKQLGenerator()
+        llm_generator = LLMKQLGenerator(options=build_kql_options())
         llm_iocs, llm_queries = llm_generator.generate_all(analyzed_article)
         
         # Display LLM IOCs
@@ -192,6 +237,21 @@ def process_single_article(url, use_kql=False):
             os.makedirs(KQL_EXPORT_DIR, exist_ok=True)
             save_queries_to_file(llm_queries, KQL_EXPORT_DIR)
             log_success(f"Exported {len(llm_queries)} queries to '{KQL_EXPORT_DIR}/' directory")
+
+        # Store IOCs and KQL queries in DB if we have an article ID
+        if stored_article_id:
+            try:
+                if total_llm_iocs > 0:
+                    stored_iocs = store_iocs(stored_article_id, llm_iocs)
+                    log_success(f"Stored {stored_iocs} IOCs in database for article ID {stored_article_id}")
+            except Exception as e:
+                log_warn(f"Failed to store IOCs: {e}")
+            try:
+                if llm_queries:
+                    stored_queries = store_kql_queries(stored_article_id, llm_queries)
+                    log_success(f"Stored {stored_queries} KQL queries in database for article ID {stored_article_id}")
+            except Exception as e:
+                log_warn(f"Failed to store KQL queries: {e}")
         
         # Summary comparison
         print(f"\n{BColors.HEADER}{'='*70}{BColors.ENDC}")
@@ -266,7 +326,7 @@ def main_pipeline():
             from src.config import AUTO_EXTRACT_IOCS, EXTRACT_IOCS_FOR_RISK_LEVELS
             if AUTO_EXTRACT_IOCS and article_ids:
                 log_step("4.5", "Auto-Extracting IOCs from Analyzed Articles")
-                llm_generator = LLMKQLGenerator()
+                llm_generator = LLMKQLGenerator(options=build_kql_options())
                 total_iocs_extracted = 0
                 articles_with_iocs = 0
                 
@@ -768,7 +828,7 @@ def cmd_analyze_unanalyzed():
     from src.config import AUTO_EXTRACT_IOCS, EXTRACT_IOCS_FOR_RISK_LEVELS
     if AUTO_EXTRACT_IOCS and article_ids:
         log_step("4.5", "Auto-Extracting IOCs from Analyzed Articles")
-        llm_generator = LLMKQLGenerator()
+        llm_generator = LLMKQLGenerator(options=build_kql_options())
         total_iocs_extracted = 0
         articles_with_iocs = 0
         

@@ -242,64 +242,119 @@ function ArticlePage() {
           )}
         </div>
 
-        {/* IOCs Section */}
+        {/* IOCs Section - Grouped by Type */}
         <div style={{ marginBottom: '32px' }}>
           <h3 style={{ color: '#4285f4', fontSize: '18px', marginBottom: '12px', fontWeight: '600' }}>
             🎯 Indicators of Compromise ({article.iocs?.length || 0})
           </h3>
-          {article.iocs && article.iocs.length > 0 ? (
-            <div>
-              {article.iocs.map((ioc, idx) => (
-                <div 
-                  key={idx} 
-                  style={{
-                    padding: '16px',
-                    backgroundColor: '#1e1e2e',
-                    margin: '12px 0',
-                    borderRadius: '8px',
-                    borderLeft: '4px solid #00d9c0'
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                    <span style={{ 
-                      color: '#00d9c0', 
-                      fontWeight: '700',
-                      fontSize: '12px',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.5px'
-                    }}>
-                      {ioc.ioc_type}
-                    </span>
-                  </div>
-                  <div style={{ 
-                    color: '#e0e0e0', 
-                    fontFamily: 'monospace',
-                    fontSize: '14px',
-                    wordBreak: 'break-all',
-                    background: '#2a2a3e',
-                    padding: '8px',
-                    borderRadius: '4px'
-                  }}>
-                    {ioc.ioc_value}
-                  </div>
-                  {ioc.context && (
-                    <div style={{ 
-                      color: '#a1a1aa', 
-                      fontSize: '12px',
-                      marginTop: '8px',
-                      fontStyle: 'italic'
-                    }}>
-                      Context: {ioc.context}
+          {(() => {
+            const iocs = Array.isArray(article.iocs) ? article.iocs : [];
+            if (iocs.length === 0) {
+              return (
+                <p style={{ color: '#a1a1aa', fontStyle: 'italic' }}>
+                  No IOCs extracted
+                </p>
+              );
+            }
+            // Group by normalized IOC type
+            const groups = {};
+            const labelFor = (t) => {
+              const s = String(t || '').toLowerCase();
+              if (s.includes('sender') && s.includes('domain')) return 'Sender Domains';
+              if (s.includes('sender')) return 'Sender Emails';
+              if (s.includes('email')) return 'Emails';
+              if (s.includes('domain')) return 'Domains';
+              if (s === 'ips' || s.includes('ip')) return 'IPs';
+              if (s.includes('url')) return 'URLs';
+              if (s.includes('hash') || s.includes('sha') || s.includes('md5')) return 'Hashes';
+              if (s.includes('cve')) return 'CVEs';
+              return (t || 'Other').toString();
+            };
+            const order = ['Domains', 'IPs', 'URLs', 'Sender Domains', 'Sender Emails', 'Emails', 'Hashes', 'CVEs'];
+            for (const ioc of iocs) {
+              const key = labelFor(ioc.ioc_type);
+              if (!groups[key]) groups[key] = [];
+              groups[key].push(ioc);
+            }
+            const sortedKeys = Object.keys(groups).sort((a, b) => {
+              const ia = order.indexOf(a);
+              const ib = order.indexOf(b);
+              if (ia === -1 && ib === -1) return a.localeCompare(b);
+              if (ia === -1) return 1;
+              if (ib === -1) return -1;
+              return ia - ib;
+            });
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {sortedKeys.map((key) => {
+                  const isDomains = key === 'Domains';
+                  if (isDomains) {
+                    const domainValues = Array.from(new Set((groups[key] || []).map(i => i.ioc_value).filter(Boolean)));
+                    const domainText = domainValues.join('\n');
+                    return (
+                      <div key={key} style={{ background: '#1e1e2e', borderRadius: '8px', padding: '16px', border: '1px solid #303042' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px', gap: '8px' }}>
+                          <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                            <span style={{ color: '#00d9c0', fontWeight: 700, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{key}</span>
+                            <span style={{ color: '#a1a1aa', fontSize: '12px' }}>({domainValues.length})</span>
+                          </div>
+                          <button
+                            onClick={() => navigator.clipboard?.writeText(domainText)}
+                            title="Copy domains to clipboard"
+                            style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #3a3a4a', background: '#2a2a3e', color: '#e0e0e0', cursor: 'pointer', fontSize: '12px' }}
+                          >
+                            Copy
+                          </button>
+                        </div>
+                        <pre style={{
+                          background: '#2a2a3e',
+                          color: '#e0e0e0',
+                          fontFamily: 'monospace',
+                          fontSize: '12px',
+                          padding: '10px',
+                          borderRadius: '6px',
+                          border: '1px solid #3a3a4a',
+                          margin: 0,
+                          whiteSpace: 'pre-wrap',
+                          wordBreak: 'break-word',
+                          overflowWrap: 'anywhere'
+                        }}>{domainText}</pre>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div key={key} style={{ background: '#1e1e2e', borderRadius: '8px', padding: '16px', border: '1px solid #303042' }}>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '10px' }}>
+                        <span style={{ color: '#00d9c0', fontWeight: 700, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{key}</span>
+                        <span style={{ color: '#a1a1aa', fontSize: '12px' }}>({groups[key].length})</span>
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                        {groups[key].map((ioc, idx) => (
+                          <div key={idx} style={{
+                            background: '#2a2a3e',
+                            color: '#e0e0e0',
+                            fontFamily: 'monospace',
+                            fontSize: '12px',
+                            padding: '6px 8px',
+                            borderRadius: '6px',
+                            border: '1px solid #3a3a4a',
+                            maxWidth: '100%',
+                            overflowWrap: 'anywhere'
+                          }}>
+                            {ioc.ioc_value}
+                            {/* Keep context for non-domain types only */}
+                            {ioc.context && (
+                              <span style={{ color: '#a1a1aa', fontSize: '11px' }}> • {ioc.context}</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p style={{ color: '#a1a1aa', fontStyle: 'italic' }}>
-              No IOCs extracted
-            </p>
-          )}
+                  );
+                })}
+              </div>
+            );
+          })()}
         </div>
 
         {/* KQL Queries Section */}
@@ -333,7 +388,10 @@ function ArticlePage() {
                     margin: 0,
                     fontFamily: 'monospace',
                     color: '#e0e0e0',
-                    lineHeight: '1.5'
+                    lineHeight: '1.5',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    overflowWrap: 'anywhere'
                   }}>
                     {query.kql_query || query.query_text}
                   </pre>
