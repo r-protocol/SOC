@@ -83,8 +83,8 @@ async function fetchArticle(articleId) {
   }
 }
 
-// Export API functions
-export const api = {
+// Export API functions as default export
+const api = {
   // Dashboard data endpoints
   getPipelineOverview: (options) => fetchData('pipeline-overview', options),
   getRiskDistribution: () => fetchData('risk-distribution'),
