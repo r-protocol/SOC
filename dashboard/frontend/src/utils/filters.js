@@ -109,21 +109,47 @@ export function aggregateAttackVectors(threats, timeRange) {
 
 /**
  * Aggregate top targeted industries
+ * Extracts industries from article content using keyword matching
  */
 export function aggregateTopIndustries(threats, timeRange) {
   const filtered = filterByTimeRange(threats, timeRange);
   
   const industryCount = {};
+  
+  // Industry keywords mapping (matching backend logic)
+  const industryKeywords = {
+    'Finance': ['bank', 'financial', 'finance', 'payment', 'credit', 'trading', 'fintech', 'cryptocurrency', 'crypto'],
+    'Healthcare': ['health', 'hospital', 'medical', 'patient', 'healthcare', 'pharmaceutical', 'clinic'],
+    'Government': ['government', 'federal', 'state', 'military', 'defense', 'agency', 'public sector'],
+    'Manufacturing': ['manufacturing', 'industrial', 'factory', 'production', 'automotive', 'supply chain'],
+    'Technology': ['tech', 'software', 'cloud', 'saas', 'it company', 'technology firm'],
+    'Energy': ['energy', 'oil', 'gas', 'utility', 'power', 'electric', 'renewable'],
+    'Retail': ['retail', 'ecommerce', 'e-commerce', 'shopping', 'store', 'consumer'],
+    'Education': ['education', 'university', 'school', 'college', 'academic', 'student'],
+    'Telecommunications': ['telecom', 'telecommunications', 'mobile', 'network provider', 'isp'],
+    'Transportation': ['transportation', 'airline', 'shipping', 'logistics', 'aviation']
+  };
+  
   filtered.forEach(threat => {
-    // Extract industries from threat data (you might need to adjust based on your data structure)
-    const industries = threat.targeted_industries || [];
-    industries.forEach(industry => {
-      industryCount[industry] = (industryCount[industry] || 0) + 1;
-    });
+    // Combine all text fields for keyword matching
+    const text = [
+      threat.category || '',
+      threat.title || '',
+      threat.summary || '',
+      threat.content || ''
+    ].join(' ').toLowerCase();
+    
+    // Check each industry's keywords
+    for (const [industry, keywords] of Object.entries(industryKeywords)) {
+      if (keywords.some(keyword => text.includes(keyword))) {
+        industryCount[industry] = (industryCount[industry] || 0) + 1;
+      }
+    }
   });
   
+  // Sort by count and return top 15 with correct property names
   return Object.entries(industryCount)
-    .map(([industry, count]) => ({ industry, count }))
-    .sort((a, b) => b.count - a.count)
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value)
     .slice(0, 15);
 }
