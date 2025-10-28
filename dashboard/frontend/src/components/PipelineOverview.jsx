@@ -1,29 +1,62 @@
 import React, { useState, useEffect } from 'react';
 import api from '../utils/api';
+import { filterByTimeRange } from '../utils/filters';
 
 function PipelineOverview({ timeRange }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [allThreats, setAllThreats] = useState([]);
 
+  // Load all data once for production mode
   useEffect(() => {
-    // Build time range parameters
-    let timeParams = '';
-    if (timeRange.type === 'daterange' && timeRange.startDate && timeRange.endDate) {
-      timeParams = `?start_date=${timeRange.startDate}&end_date=${timeRange.endDate}`;
-    } else if (timeRange.days) {
-      timeParams = `?days=${timeRange.days}`;
+    if (import.meta.env.PROD) {
+      api.getRecentThreats({})
+        .then(threats => {
+          setAllThreats(threats);
+          setLoading(false);
+        })
+        .catch(err => {
+          console.error(err);
+          setLoading(false);
+        });
+    } else {
+      // Development mode - use backend API
+      const options = {};
+      if (timeRange.type === 'daterange' && timeRange.startDate && timeRange.endDate) {
+        options.start_date = timeRange.startDate;
+        options.end_date = timeRange.endDate;
+      } else if (timeRange.days) {
+        options.days = timeRange.days;
+      }
+      
+      api.getPipelineOverview(options)
+        .then(data => {
+          setData(data);
+          setLoading(false);
+        })
+        .catch(err => {
+          console.error(err);
+          setLoading(false);
+        });
     }
-    
-    api.getPipelineOverview({})
-      .then(data => {
-        setData(data);
-        setLoading(false);
-      })
-      .catch(err => {
-        console.error(err);
-        setLoading(false);
-      });
-  }, [timeRange]);
+  }, []);
+
+  // Calculate stats based on filtered data for production
+  useEffect(() => {
+    if (import.meta.env.PROD && allThreats.length > 0) {
+      const filtered = filterByTimeRange(allThreats, timeRange);
+      
+      const stats = {
+        critical_threats: filtered.filter(t => t.risk_level === 'HIGH').length,
+        articles_processed: allThreats.length, // Total in database
+        total_iocs: filtered.reduce((sum, t) => sum + (t.ioc_count || 0), 0),
+        total_kql: filtered.reduce((sum, t) => sum + (t.kql_count || 0), 0),
+        filtered_items: filtered.length
+      };
+      
+      setData(stats);
+    }
+  }, [timeRange, allThreats]);
 
   if (loading) return <div className="card loading">Loading...</div>;
   if (!data) return null;
@@ -47,7 +80,7 @@ function PipelineOverview({ timeRange }) {
         <div className="kpi-value">{data.total_kql}</div>
       </div>
       <div className="card kpi-card warning">
-        <div className="kpi-label">Recent (7 days)</div>
+        <div className="kpi-label">Recent ({timeRange.days ? `${timeRange.days} days` : 'filtered'})</div>
         <div className="kpi-value">{data.filtered_items}</div>
       </div>
     </>

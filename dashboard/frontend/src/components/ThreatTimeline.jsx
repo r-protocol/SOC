@@ -8,29 +8,26 @@ function ThreatTimeline({ timeRange }) {
   const [loading, setLoading] = useState(true);
   const [allThreats, setAllThreats] = useState([]);
 
-  // Load all threats once
+  // Load all threats once for production mode
   useEffect(() => {
-    api.getRecentThreats({})
-      .then(threats => {
-        setAllThreats(threats);
-        setLoading(false);
-      })
-      .catch(err => {
-        console.error(err);
-        setLoading(false);
-      });
+    if (import.meta.env.PROD) {
+      api.getRecentThreats({})
+        .then(threats => {
+          setAllThreats(threats);
+          setLoading(false);
+        })
+        .catch(err => {
+          console.error(err);
+          setLoading(false);
+        });
+    }
   }, []);
 
-  // Filter and aggregate when timeRange changes
+  // Filter and aggregate when timeRange changes (production)
   useEffect(() => {
-    if (allThreats.length > 0) {
-      const aggregated = import.meta.env.PROD 
-        ? aggregateTimelineData(allThreats, timeRange)
-        : data; // In dev mode, use API response
-      
-      if (import.meta.env.PROD) {
-        setData(aggregated);
-      }
+    if (import.meta.env.PROD && allThreats.length > 0) {
+      const aggregated = aggregateTimelineData(allThreats, timeRange);
+      setData(aggregated);
     }
   }, [timeRange, allThreats]);
 
