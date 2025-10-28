@@ -275,7 +275,7 @@ function Dashboard() {
 
 function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename="/SOC">
       <Routes>
         <Route path="/" element={<Dashboard />} />
         <Route path="/article" element={<ArticlePage />} />
