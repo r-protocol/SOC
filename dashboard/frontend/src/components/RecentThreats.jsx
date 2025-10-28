@@ -33,6 +33,9 @@ function RecentThreats({ timeRange }) {
     api.getRecentThreats(options)
       .then(data => {
         console.log('Recent Threats Response:', data);
+        console.log('Number of threats received:', Array.isArray(data) ? data.length : 'not an array');
+        console.log('IS_PRODUCTION:', import.meta.env.PROD);
+        console.log('Options passed:', options);
         setThreats(data);
         setLoading(false);
       })
@@ -166,6 +169,11 @@ function RecentThreats({ timeRange }) {
   }, [selectedArticle]);
 
   const filteredThreats = getFilteredAndSortedThreats();
+  
+  console.log('Total threats:', threats.length);
+  console.log('Filtered threats:', filteredThreats.length);
+  console.log('Search query:', searchQuery);
+  console.log('Severity filter:', severityFilter);
 
   if (loading) return <div className="card loading">Loading threats...</div>;
 
