@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../utils/api';
 import {
   ComposableMap,
   Geographies,
@@ -7,8 +7,6 @@ import {
   Marker,
   ZoomableGroup
 } from 'react-simple-maps';
-
-const API_BASE = 'http://localhost:5000/api';
 
 // World topology data URL
 const geoUrl = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";

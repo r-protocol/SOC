@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../utils/api';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-
-const API_BASE = 'http://localhost:5000/api';
 
 function ThreatTimeline({ timeRange }) {
   const [data, setData] = useState([]);
