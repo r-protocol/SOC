@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - main
-    paths:
-      - 'dashboard/frontend/**'
   workflow_dispatch:
 
 permissions:
@@ -28,8 +26,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '18'
-          cache: 'npm'
-          cache-dependency-path: dashboard/frontend/package-lock.json
 
       - name: Install dependencies
         working-directory: dashboard/frontend
