@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../utils/api';
+import { aggregateTopIndustries } from '../utils/filters';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 const COLORS = ['#ea4335', '#ff6d01', '#fbbc04', '#34a853', '#4285f4', '#a142f4', '#f538a0', '#00d9c0'];
@@ -7,25 +8,52 @@ const COLORS = ['#ea4335', '#ff6d01', '#fbbc04', '#34a853', '#4285f4', '#a142f4'
 function TopTargetedIndustries({ timeRange }) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [allThreats, setAllThreats] = useState([]);
 
+  // Load all threats once for production mode
   useEffect(() => {
-    // Build time range parameters
-    let timeParams = '';
-    if (timeRange.type === 'daterange' && timeRange.startDate && timeRange.endDate) {
-      timeParams = `?start_date=${timeRange.startDate}&end_date=${timeRange.endDate}`;
-    } else if (timeRange.days) {
-      timeParams = `?days=${timeRange.days}`;
+    if (import.meta.env.PROD) {
+      api.getRecentThreats({})
+        .then(threats => {
+          setAllThreats(threats);
+          setLoading(false);
+        })
+        .catch(err => {
+          console.error(err);
+          setLoading(false);
+        });
     }
-    
-    api.getTopTargetedIndustries({})
-      .then(data => {
-        setData(data);
-        setLoading(false);
-      })
-      .catch(err => {
-        console.error(err);
-        setLoading(false);
-      });
+  }, []);
+
+  // Filter and aggregate when timeRange changes (production)
+  useEffect(() => {
+    if (import.meta.env.PROD && allThreats.length > 0) {
+      const aggregated = aggregateTopIndustries(allThreats, timeRange);
+      setData(aggregated);
+    }
+  }, [timeRange, allThreats]);
+
+  // For development mode, fetch from API with parameters
+  useEffect(() => {
+    if (!import.meta.env.PROD) {
+      const options = {};
+      if (timeRange.type === 'daterange' && timeRange.startDate && timeRange.endDate) {
+        options.start_date = timeRange.startDate;
+        options.end_date = timeRange.endDate;
+      } else if (timeRange.days) {
+        options.days = timeRange.days;
+      }
+      
+      api.getTopTargetedIndustries(options)
+        .then(data => {
+          setData(data);
+          setLoading(false);
+        })
+        .catch(err => {
+          console.error(err);
+          setLoading(false);
+        });
+    }
   }, [timeRange]);
 
   if (loading) return <div className="card loading">Loading industries...</div>;

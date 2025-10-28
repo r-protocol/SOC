@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../utils/api';
+import { aggregateCategoryDistribution } from '../utils/filters';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 const COLORS = ['#ea4335', '#ff6d01', '#fbbc04', '#34a853', '#4285f4', '#a142f4', '#f538a0', '#00d9c0'];
@@ -7,29 +8,52 @@ const COLORS = ['#ea4335', '#ff6d01', '#fbbc04', '#34a853', '#4285f4', '#a142f4'
 function CategoryDistribution({ timeRange }) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [allThreats, setAllThreats] = useState([]);
 
+  // Load all threats once
   useEffect(() => {
-    // Build time range parameters
-    let timeParams = '';
-    if (timeRange.type === 'daterange' && timeRange.startDate && timeRange.endDate) {
-      timeParams = `?start_date=${timeRange.startDate}&end_date=${timeRange.endDate}`;
-    } else if (timeRange.days) {
-      timeParams = `?days=${timeRange.days}`;
-    }
-    
-    api.getCategoryDistribution({})
-      .then(data => {
-        // Exclude placeholder category from the pie chart
-        const filtered = Array.isArray(data)
-          ? data.filter(item => item?.name !== 'Pending Analysis')
-          : [];
-        setData(filtered);
+    api.getRecentThreats({})
+      .then(threats => {
+        setAllThreats(threats);
         setLoading(false);
       })
       .catch(err => {
         console.error(err);
         setLoading(false);
       });
+  }, []);
+
+  // Filter and aggregate when timeRange changes
+  useEffect(() => {
+    if (import.meta.env.PROD && allThreats.length > 0) {
+      const aggregated = aggregateCategoryDistribution(allThreats, timeRange);
+      const filtered = aggregated.filter(item => item?.name !== 'Pending Analysis');
+      setData(filtered);
+    }
+  }, [timeRange, allThreats]);
+
+  // For development mode, fetch from API with parameters
+  useEffect(() => {
+    if (!import.meta.env.PROD) {
+      const options = {};
+      if (timeRange.type === 'daterange' && timeRange.startDate && timeRange.endDate) {
+        options.start_date = timeRange.startDate;
+        options.end_date = timeRange.endDate;
+      } else if (timeRange.days) {
+        options.days = timeRange.days;
+      }
+      
+      api.getCategoryDistribution(options)
+        .then(data => {
+          const filtered = Array.isArray(data)
+            ? data.filter(item => item?.name !== 'Pending Analysis')
+            : [];
+          setData(filtered);
+        })
+        .catch(err => {
+          console.error(err);
+        });
+    }
   }, [timeRange]);
 
   if (loading) return <div className="card loading">Loading categories...</div>;

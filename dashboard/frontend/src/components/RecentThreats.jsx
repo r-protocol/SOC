@@ -16,17 +16,18 @@ function RecentThreats({ timeRange }) {
   useEffect(() => {
     setLoading(true);
     
-    // Build query parameters
-    const options = { limit: 50 };
+    // In production, we load all data and filter client-side
+    // In development, we can use server-side filtering
+    const options = import.meta.env.PROD ? {} : { limit: 50 };
     
-    if (severityFilter !== 'ALL') {
+    if (!import.meta.env.PROD && severityFilter !== 'ALL') {
       options.risk = severityFilter;
     }
     
-    if (timeRange.type === 'daterange' && timeRange.startDate && timeRange.endDate) {
+    if (!import.meta.env.PROD && timeRange.type === 'daterange' && timeRange.startDate && timeRange.endDate) {
       options.start_date = timeRange.startDate;
       options.end_date = timeRange.endDate;
-    } else if (timeRange.days) {
+    } else if (!import.meta.env.PROD && timeRange.days) {
       options.days = timeRange.days;
     }
     
@@ -35,8 +36,39 @@ function RecentThreats({ timeRange }) {
         console.log('Recent Threats Response:', data);
         console.log('Number of threats received:', Array.isArray(data) ? data.length : 'not an array');
         console.log('IS_PRODUCTION:', import.meta.env.PROD);
-        console.log('Options passed:', options);
-        setThreats(data);
+        
+        // Client-side filtering for production (static deployment)
+        if (import.meta.env.PROD) {
+          let filtered = data;
+          
+          // Filter by severity
+          if (severityFilter !== 'ALL') {
+            filtered = filtered.filter(threat => threat.risk_level === severityFilter);
+          }
+          
+          // Filter by time range
+          if (timeRange.type === 'daterange' && timeRange.startDate && timeRange.endDate) {
+            const start = new Date(timeRange.startDate).getTime();
+            const end = new Date(timeRange.endDate).getTime();
+            filtered = filtered.filter(threat => {
+              const threatDate = new Date(threat.published_date).getTime();
+              return threatDate >= start && threatDate <= end;
+            });
+          } else if (timeRange.days) {
+            const cutoffDate = new Date();
+            cutoffDate.setDate(cutoffDate.getDate() - timeRange.days);
+            filtered = filtered.filter(threat => {
+              const threatDate = new Date(threat.published_date);
+              return threatDate >= cutoffDate;
+            });
+          }
+          
+          console.log('Filtered from', data.length, 'to', filtered.length, 'threats');
+          setThreats(filtered);
+        } else {
+          setThreats(data);
+        }
+        
         setLoading(false);
       })
       .catch(err => {

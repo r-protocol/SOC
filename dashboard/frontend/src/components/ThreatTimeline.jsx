@@ -1,29 +1,58 @@
 import React, { useState, useEffect } from 'react';
 import api from '../utils/api';
+import { aggregateTimelineData } from '../utils/filters';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 function ThreatTimeline({ timeRange }) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [allThreats, setAllThreats] = useState([]);
 
+  // Load all threats once
   useEffect(() => {
-    // Build time range parameters
-    let timeParams = '';
-    if (timeRange.type === 'daterange' && timeRange.startDate && timeRange.endDate) {
-      timeParams = `start_date=${timeRange.startDate}&end_date=${timeRange.endDate}`;
-    } else if (timeRange.days) {
-      timeParams = `days=${timeRange.days}`;
-    }
-    
-    api.getThreatTimeline({})
-      .then(data => {
-        setData(data);
+    api.getRecentThreats({})
+      .then(threats => {
+        setAllThreats(threats);
         setLoading(false);
       })
       .catch(err => {
         console.error(err);
         setLoading(false);
       });
+  }, []);
+
+  // Filter and aggregate when timeRange changes
+  useEffect(() => {
+    if (allThreats.length > 0) {
+      const aggregated = import.meta.env.PROD 
+        ? aggregateTimelineData(allThreats, timeRange)
+        : data; // In dev mode, use API response
+      
+      if (import.meta.env.PROD) {
+        setData(aggregated);
+      }
+    }
+  }, [timeRange, allThreats]);
+
+  // For development mode, fetch from API with parameters
+  useEffect(() => {
+    if (!import.meta.env.PROD) {
+      const options = {};
+      if (timeRange.type === 'daterange' && timeRange.startDate && timeRange.endDate) {
+        options.start_date = timeRange.startDate;
+        options.end_date = timeRange.endDate;
+      } else if (timeRange.days) {
+        options.days = timeRange.days;
+      }
+      
+      api.getThreatTimeline(options)
+        .then(data => {
+          setData(data);
+        })
+        .catch(err => {
+          console.error(err);
+        });
+    }
   }, [timeRange]);
 
   if (loading) return <div className="card loading">Loading timeline...</div>;
