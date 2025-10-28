@@ -30,9 +30,9 @@ def export_all_data():
     print("="*70)
     
     try:
-        # Get ALL recent threats without date filtering (limit to a reasonable number)
+        # Get ALL recent threats without date filtering (use large number of days to get all)
         print("📊 Fetching all articles from database...", end=" ")
-        all_threats = db.get_recent_threats(limit=5000, days=None)  # No date filter
+        all_threats = db.get_recent_threats(limit=5000, days=3650)  # 10 years = effectively all data
         print(f"✅ Found {len(all_threats)} articles")
         
         # Create the main data structure
