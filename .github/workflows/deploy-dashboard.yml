@@ -37,8 +37,10 @@ jobs:
         run: |
           python scripts/utilities/export_static_data.py
           echo "✅ Static data exported successfully"
-          echo "📊 Data files:"
+          echo "📊 Data files in public/data/:"
           ls -lah dashboard/frontend/public/data/ | head -20
+          echo "📊 Article count:"
+          ls dashboard/frontend/public/data/articles/ | wc -l
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -51,7 +53,13 @@ jobs:
 
       - name: Build
         working-directory: dashboard/frontend
-        run: npm run build
+        run: |
+          npm run build
+          echo "✅ Build complete"
+          echo "📦 Build output:"
+          ls -lah dist/ | head -20
+          echo "📊 Checking if data was copied to dist:"
+          ls -lah dist/data/ 2>/dev/null || echo "⚠️  No data folder in dist!"
         env:
           NODE_ENV: production
 
