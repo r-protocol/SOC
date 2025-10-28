@@ -30,19 +30,21 @@ def export_to_json():
     print("="*70)
     
     # Export functions mapping
+    # Expand export window to cover last 4-12 months for richer client-side filtering
+    EXPORT_DAYS = 365  # include up to 1 year to capture all 333+ items
     exports = {
-        'pipeline-overview.json': lambda: db.get_pipeline_overview(days=30),
+        'pipeline-overview.json': lambda: db.get_pipeline_overview(days=EXPORT_DAYS),
         'risk-distribution.json': lambda: db.get_risk_distribution(),
-        'category-distribution.json': lambda: db.get_category_distribution(days=30),
-        'threat-timeline.json': lambda: db.get_threat_timeline(days=30),
-        'recent-threats.json': lambda: db.get_recent_threats(limit=100, days=30),
+        'category-distribution.json': lambda: db.get_category_distribution(days=EXPORT_DAYS),
+        'threat-timeline.json': lambda: db.get_threat_timeline(days=EXPORT_DAYS),
+        'recent-threats.json': lambda: db.get_recent_threats(limit=5000, days=EXPORT_DAYS),
         'ioc-stats.json': lambda: db.get_ioc_stats(),
         'rss-feed-stats.json': lambda: db.get_rss_feed_stats(),
         'threat-families.json': lambda: db.get_threat_families(),
-        'top-targeted-industries.json': lambda: db.get_top_targeted_industries(limit=15, days=30),
-        'threat-actor-activity.json': lambda: db.get_threat_actor_activity(limit=50, days=30),
-        'attack-vectors.json': lambda: db.get_attack_vectors(days=30),
-        'trending-cves.json': lambda: db.get_trending_cves(limit=20, days=30),
+        'top-targeted-industries.json': lambda: db.get_top_targeted_industries(limit=50, days=EXPORT_DAYS),
+        'threat-actor-activity.json': lambda: db.get_threat_actor_activity(limit=200, days=EXPORT_DAYS),
+        'attack-vectors.json': lambda: db.get_attack_vectors(days=EXPORT_DAYS),
+        'trending-cves.json': lambda: db.get_trending_cves(limit=100, days=EXPORT_DAYS),
     }
     
     # Export each dataset

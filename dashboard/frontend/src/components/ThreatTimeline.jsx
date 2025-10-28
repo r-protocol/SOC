@@ -5,7 +5,9 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 
 function ThreatTimeline({ timeRange }) {
   const [data, setData] = useState([]);
-  const [loading, setLoading] = useState(true);
+  // In dev we fetch timeline per-request, so don't block render with a loading gate
+  // In prod we first load all threats (static JSON), then aggregate client-side
+  const [loading, setLoading] = useState(import.meta.env.PROD);
   const [allThreats, setAllThreats] = useState([]);
 
   // Load all threats once for production mode
@@ -45,9 +47,11 @@ function ThreatTimeline({ timeRange }) {
       api.getThreatTimeline(options)
         .then(data => {
           setData(data);
+          setLoading(false);
         })
         .catch(err => {
           console.error(err);
+          setLoading(false);
         });
     }
   }, [timeRange]);

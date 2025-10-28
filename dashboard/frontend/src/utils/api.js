@@ -7,7 +7,8 @@
 
 const IS_PRODUCTION = import.meta.env.PROD;
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
-const STATIC_DATA_BASE = '/SOC/data'; // GitHub Pages path
+// Use Vite base to construct the correct path both locally (preview) and on GitHub Pages
+const STATIC_DATA_BASE = `${import.meta.env.BASE_URL}data`;
 
 /**
  * Fetch data from either static JSON or API endpoint
