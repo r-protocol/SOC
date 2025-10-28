@@ -29,14 +29,14 @@ function ThreatActorGeoMap({ timeRange }) {
       timeParams = `?days=${timeRange.days}`;
     }
     
-    axios.get(`${API_BASE}/threat-actor-activity${timeParams}`)
-      .then(res => {
-        setActors(res.data);
+    api.getThreatActorActivity({})
+      .then(data => {
+        setActors(data);
         
         // Backend now returns aggregated data with incident_count
         // Convert to stats format for component compatibility
         const stats = {};
-        res.data.forEach(actor => {
+        data.forEach(actor => {
           const key = `${actor.actor}-${actor.country}`;
           stats[key] = {
             actor: actor.actor,

@@ -1,16 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-
-const API_BASE = 'http://localhost:5000/api';
+import api from '../utils/api';
 
 function ThreatFamilies() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    axios.get(`${API_BASE}/threat-families`)
-      .then(res => {
-        setData(res.data);
+    api.getThreatFamilies()
+      .then(data => {
+        setData(data);
         setLoading(false);
       })
       .catch(err => {

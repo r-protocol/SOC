@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-
-const API_BASE = 'http://localhost:5000/api';
+import api from '../utils/api';
 
 function RecentThreats({ timeRange }) {
   const [threats, setThreats] = useState([]);
@@ -17,23 +15,25 @@ function RecentThreats({ timeRange }) {
 
   useEffect(() => {
     setLoading(true);
-    const riskParam = severityFilter === 'ALL' ? '' : `&risk=${severityFilter}`;
     
-    // Build time range parameters
-    let timeParams = '';
-    if (timeRange.type === 'daterange' && timeRange.startDate && timeRange.endDate) {
-      timeParams = `&start_date=${timeRange.startDate}&end_date=${timeRange.endDate}`;
-    } else if (timeRange.days) {
-      timeParams = `&days=${timeRange.days}`;
+    // Build query parameters
+    const options = { limit: 50 };
+    
+    if (severityFilter !== 'ALL') {
+      options.risk = severityFilter;
     }
     
-    const url = `${API_BASE}/recent-threats?limit=50${riskParam}${timeParams}`;
-    console.log('Fetching Recent Threats:', url);
+    if (timeRange.type === 'daterange' && timeRange.startDate && timeRange.endDate) {
+      options.start_date = timeRange.startDate;
+      options.end_date = timeRange.endDate;
+    } else if (timeRange.days) {
+      options.days = timeRange.days;
+    }
     
-    axios.get(url)
-      .then(res => {
-        console.log('Recent Threats Response:', res.data);
-        setThreats(res.data);
+    api.getRecentThreats(options)
+      .then(data => {
+        console.log('Recent Threats Response:', data);
+        setThreats(data);
         setLoading(false);
       })
       .catch(err => {
@@ -47,19 +47,19 @@ function RecentThreats({ timeRange }) {
     setModalLoading(true);
     setSelectedArticle(threatId);
     
-    axios.get(`${API_BASE}/article/${threatId}`)
-      .then(res => {
-        const articleData = {
-          ...res.data,
-          iocs: res.data.iocs || [],
-          kql_queries: res.data.kql_queries || [],
-          summary: res.data.summary || '',
-          recommendations: res.data.recommendations || '',
-          source_url: res.data.source_url || '',
-          category: res.data.category || 'Uncategorized',
-          risk_level: res.data.risk_level || 'UNKNOWN'
+    api.getArticle(threatId)
+      .then(articleData => {
+        const article = {
+          ...articleData,
+          iocs: articleData.iocs || [],
+          kql_queries: articleData.kql_queries || [],
+          summary: articleData.summary || '',
+          recommendations: articleData.recommendations || '',
+          source_url: articleData.source_url || '',
+          category: articleData.category || 'Uncategorized',
+          risk_level: articleData.risk_level || 'UNKNOWN'
         };
-        setModalArticle(articleData);
+        setModalArticle(article);
         setModalLoading(false);
       })
       .catch(err => {
@@ -86,10 +86,10 @@ function RecentThreats({ timeRange }) {
 
   const openSourceInNewTab = (threatId) => {
     // Get the article details and open source URL in new tab
-    axios.get(`${API_BASE}/article/${threatId}`)
-      .then(res => {
-        if (res.data.source_url) {
-          window.open(res.data.source_url, '_blank', 'noopener,noreferrer');
+    api.getArticle(threatId)
+      .then(articleData => {
+        if (articleData.source_url) {
+          window.open(articleData.source_url, '_blank', 'noopener,noreferrer');
         } else {
           alert('No source URL available for this article');
         }

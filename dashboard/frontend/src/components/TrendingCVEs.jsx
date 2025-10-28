@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-
-const API_BASE = 'http://localhost:5000/api';
+import api from '../utils/api';
 
 function TrendingCVEs({ timeRange }) {
   const [cves, setCves] = useState([]);
@@ -16,9 +14,9 @@ function TrendingCVEs({ timeRange }) {
       timeParams = `?days=${timeRange.days}`;
     }
     
-    axios.get(`${API_BASE}/trending-cves${timeParams}`)
-      .then(res => {
-        setCves(res.data);
+    api.getTrendingCVEs({})
+      .then(data => {
+        setCves(data);
         setLoading(false);
       })
       .catch(err => {

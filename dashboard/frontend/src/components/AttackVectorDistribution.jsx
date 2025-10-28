@@ -19,9 +19,9 @@ function AttackVectorDistribution({ timeRange }) {
       timeParams = `?days=${timeRange.days}`;
     }
     
-    axios.get(`${API_BASE}/attack-vectors${timeParams}`)
-      .then(res => {
-        setData(res.data);
+    api.getAttackVectors({})
+      .then(data => {
+        setData(data);
         setLoading(false);
       })
       .catch(err => {

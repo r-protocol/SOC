@@ -19,9 +19,9 @@ function TopTargetedIndustries({ timeRange }) {
       timeParams = `?days=${timeRange.days}`;
     }
     
-    axios.get(`${API_BASE}/top-targeted-industries${timeParams}`)
-      .then(res => {
-        setData(res.data);
+    api.getTopTargetedIndustries({})
+      .then(data => {
+        setData(data);
         setLoading(false);
       })
       .catch(err => {

@@ -2,17 +2,35 @@
 
 Web-based dashboard for visualizing and monitoring threat intelligence data from your RSS feed pipeline.
 
+**🌐 Live Demo:** https://r-protocol.github.io/SOC/
+
+## 🚀 Deployment Options
+
+This dashboard can run in two modes:
+
+### 1. Static GitHub Pages (Recommended for Deployment)
+- **No backend required** - Fully static site
+- **Free hosting** on GitHub Pages
+- **Automatic updates** via GitHub Actions
+- 📖 See [STATIC_DEPLOYMENT.md](STATIC_DEPLOYMENT.md) for details
+
+### 2. Local Development with Live Backend
+- **Real-time data** from SQLite database
+- **Flask REST API** backend
+- **React development** server
+- 📖 Instructions below
+
 ## 🏗️ Architecture
 
-- **Backend**: Flask REST API (Python)
-- **Frontend**: React + Vite (JavaScript)
-- **Database**: SQLite (threat_intel.db)
+- **Backend**: Flask REST API (Python) - Optional for local development
+- **Frontend**: React + Vite (JavaScript) - Deployed as static site
+- **Database**: SQLite (threat_intel.db) - Exported to JSON for static deployment
 - **Charts**: Recharts
 - **Styling**: Custom CSS with dark theme + Google color palette
 
-## 📦 Installation
+## 📦 Local Development Setup
 
-### Backend Setup
+### Backend Setup (Optional - for live data)
 
 ```powershell
 # Navigate to backend directory

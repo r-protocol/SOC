@@ -9,13 +9,13 @@ function IOCStats() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    axios.get(`${API_BASE}/ioc-stats`)
-      .then(res => {
+    api.getIOCStats()
+      .then(data => {
         const formatted = [
-          { name: 'Domains', count: res.data.domains, fill: '#4285f4' },
-          { name: 'IPs', count: res.data.ips, fill: '#34a853' },
-          { name: 'Hashes', count: res.data.hashes, fill: '#ff6d01' },
-          { name: 'CVEs', count: res.data.cves, fill: '#ea4335' }
+          { name: 'Domains', count: data.domains, fill: '#4285f4' },
+          { name: 'IPs', count: data.ips, fill: '#34a853' },
+          { name: 'Hashes', count: data.hashes, fill: '#ff6d01' },
+          { name: 'CVEs', count: data.cves, fill: '#ea4335' }
         ];
         setData(formatted);
         setLoading(false);

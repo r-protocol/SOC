@@ -18,17 +18,17 @@ function ArticlePage() {
       return;
     }
 
-    axios.get(`${API_BASE}/article/${articleId}`)
-      .then(res => {
+    api.getArticle(articleId)
+      .then(data => {
         const articleData = {
-          ...res.data,
-          iocs: res.data.iocs || [],
-          kql_queries: res.data.kql_queries || [],
-          summary: res.data.summary || '',
-          recommendations: res.data.recommendations || '',
-          source_url: res.data.source_url || '',
-          category: res.data.category || 'Uncategorized',
-          risk_level: res.data.risk_level || 'UNKNOWN'
+          ...data,
+          iocs: data.iocs || [],
+          kql_queries: data.kql_queries || [],
+          summary: data.summary || '',
+          recommendations: data.recommendations || '',
+          source_url: data.source_url || '',
+          category: data.category || 'Uncategorized',
+          risk_level: data.risk_level || 'UNKNOWN'
         };
         setArticle(articleData);
         setLoading(false);

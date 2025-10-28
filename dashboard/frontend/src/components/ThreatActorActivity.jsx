@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-
-const API_BASE = 'http://localhost:5000/api';
+import api from '../utils/api';
 
 function ThreatActorActivity({ timeRange }) {
   const [actors, setActors] = useState([]);
@@ -16,9 +14,9 @@ function ThreatActorActivity({ timeRange }) {
       timeParams = `?days=${timeRange.days}`;
     }
     
-    axios.get(`${API_BASE}/threat-actor-activity${timeParams}`)
-      .then(res => {
-        setActors(res.data);
+    api.getThreatActorActivity({})
+      .then(data => {
+        setActors(data);
         setLoading(false);
       })
       .catch(err => {

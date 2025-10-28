@@ -17,9 +17,9 @@ function ThreatTimeline({ timeRange }) {
       timeParams = `days=${timeRange.days}`;
     }
     
-    axios.get(`${API_BASE}/threat-timeline?${timeParams}`)
-      .then(res => {
-        setData(res.data);
+    api.getThreatTimeline({})
+      .then(data => {
+        setData(data);
         setLoading(false);
       })
       .catch(err => {

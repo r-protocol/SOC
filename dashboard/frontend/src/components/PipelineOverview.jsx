@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-
-const API_BASE = 'http://localhost:5000/api';
+import api from '../utils/api';
 
 function PipelineOverview({ timeRange }) {
   const [data, setData] = useState(null);
@@ -16,9 +14,9 @@ function PipelineOverview({ timeRange }) {
       timeParams = `?days=${timeRange.days}`;
     }
     
-    axios.get(`${API_BASE}/pipeline-overview${timeParams}`)
-      .then(res => {
-        setData(res.data);
+    api.getPipelineOverview({})
+      .then(data => {
+        setData(data);
         setLoading(false);
       })
       .catch(err => {

@@ -1,16 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-
-const API_BASE = 'http://localhost:5000/api';
+import api from '../utils/api';
 
 function RSSFeedStats() {
   const [feeds, setFeeds] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    axios.get(`${API_BASE}/rss-feed-stats`)
-      .then(res => {
-        setFeeds(res.data);
+    api.getRSSFeedStats()
+      .then(data => {
+        setFeeds(data);
         setLoading(false);
       })
       .catch(err => {

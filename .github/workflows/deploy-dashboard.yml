@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'dashboard/frontend/**'
+      - 'threat_intel.db'
+      - 'dashboard/backend/database.py'
+      - 'scripts/utilities/export_static_data.py'
+      - '.github/workflows/deploy-dashboard.yml'
   workflow_dispatch:
 
 permissions:
@@ -18,10 +24,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python dependencies
+        run: |
+          pip install -r dashboard/backend/requirements.txt
+
+      - name: Export static data from database
+        run: |
+          python scripts/utilities/export_static_data.py
+          echo "✅ Static data exported successfully"
+          echo "📊 Data files:"
+          ls -lah dashboard/frontend/public/data/ | head -20
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
 
       - name: Install dependencies
         working-directory: dashboard/frontend
@@ -30,6 +52,8 @@ jobs:
       - name: Build
         working-directory: dashboard/frontend
         run: npm run build
+        env:
+          NODE_ENV: production
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
@@ -49,3 +73,8 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Deployment complete
+        run: |
+          echo "✅ Dashboard deployed to GitHub Pages!"
+          echo "🌐 URL: https://r-protocol.github.io/SOC/"
