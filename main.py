@@ -1,5 +1,7 @@
 # main.py
 import sys
+import os
+import subprocess
 import datetime
 import sqlite3
 from src.utils.db_utils import initialize_database, get_existing_urls, store_analyzed_data, store_iocs, store_kql_queries
@@ -1186,6 +1188,11 @@ def cmd_show_help():
   {BColors.OKGREEN}python main.py{BColors.ENDC}
       Run full pipeline: Fetch articles (2-week window), analyze, generate report
 
+    {BColors.OKGREEN}python main.py --upload{BColors.ENDC}
+            Run full pipeline and then publish the latest generated DOCX to the
+            dashboard static folder (dashboard/frontend/public/reports), committing
+            and pushing the change so it is available on GitHub Pages.
+
   {BColors.OKGREEN}python main.py --fetch{BColors.ENDC}
       Fetch-only mode: Download articles from RSS feeds and store in database
       (no filtering, no analysis, no report generation)
@@ -1471,6 +1478,9 @@ if __name__ == "__main__":
             sys.exit(1)
         sys.exit(0)
     
+    # Check for upload mode flag (to publish latest DOCX after running the normal pipeline)
+    upload_mode = "--upload" in sys.argv
+
     # Check for single article processing mode
     source_url = None
     if "-s" in sys.argv:
@@ -1497,3 +1507,24 @@ if __name__ == "__main__":
     else:
         # Normal pipeline mode
         main_pipeline()
+
+        # If --upload was provided, publish latest DOCX to the dashboard static folder via PowerShell helper
+        if upload_mode:
+            try:
+                script_path = os.path.join(os.path.dirname(__file__), "scripts", "upload-report.ps1")
+                if not os.path.exists(script_path):
+                    log_warn(f"Upload script not found at {script_path}. Skipping publish step.")
+                else:
+                    log_step("Publish", "Uploading latest report to dashboard/public/reports and pushing to Git")
+                    # Use Windows PowerShell to run the script; let it auto-detect the newest report
+                    result = subprocess.run([
+                        "powershell",
+                        "-ExecutionPolicy", "Bypass",
+                        "-File", script_path
+                    ], check=True)
+                    if result.returncode == 0:
+                        log_success("Report upload completed successfully")
+            except subprocess.CalledProcessError as e:
+                log_error(f"Report upload failed with exit code {e.returncode}")
+            except Exception as e:
+                log_warn(f"Skipping upload due to error: {e}")

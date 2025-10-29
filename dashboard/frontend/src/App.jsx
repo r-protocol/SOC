@@ -11,6 +11,7 @@ import ThreatActorGeoMap from './components/ThreatActorGeoMap';
 import AttackVectorDistribution from './components/AttackVectorDistribution';
 import TrendingCVEs from './components/TrendingCVEs';
 import ArticlePage from './components/ArticlePage';
+import LatestReportLink from './components/LatestReportLink';
 
 function Dashboard() {
   const [refreshInterval, setRefreshInterval] = useState(300000); // 5 minutes (300 seconds)
@@ -105,6 +106,9 @@ function Dashboard() {
         <p className="header-subtitle">
           Real-time threat monitoring and analysis • Auto-refresh every 5 minutes
         </p>
+        <div style={{ marginTop: '12px' }}>
+          <LatestReportLink />
+        </div>
         
         {/* Time Range Filter */}
         <div style={{ 
