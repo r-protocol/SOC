@@ -8,8 +8,9 @@ import React, { useEffect, useState } from 'react';
  */
 export default function LatestReportLink() {
   const base = import.meta.env.BASE_URL || '/';
+  const stableUrl = `${base}reports/latest.docx`;
   const [state, setState] = useState({
-    url: `${base}reports/latest.docx`,
+    url: stableUrl,
     label: 'Download Latest Report (DOCX)'
   });
 
@@ -23,8 +24,9 @@ export default function LatestReportLink() {
         if (Array.isArray(list) && list.length > 0) {
           const first = list[0];
           const when = first.updated ? new Date(first.updated).toLocaleString() : '';
+          // Always point to stable latest.docx to avoid transient 404s if dated file isn't deployed yet
           setState({
-            url: `${base}${first.url}`.replace(/\\/g, '/'),
+            url: stableUrl,
             label: when ? `Download Latest Report (DOCX) – updated ${when}` : 'Download Latest Report (DOCX)'
           });
         }
@@ -49,6 +51,7 @@ export default function LatestReportLink() {
         color: '#8ab4f8',
         textDecoration: 'none',
         fontWeight: 600,
+        whiteSpace: 'nowrap'
       }}
     >
       📄 {state.label}

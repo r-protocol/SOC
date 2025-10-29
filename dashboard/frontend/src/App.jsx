@@ -102,12 +102,16 @@ function Dashboard() {
   return (
     <div className="dashboard">
       <header className="header">
-        <h1>🛡️ SOC Threat Intelligence Dashboard</h1>
-        <p className="header-subtitle">
-          Real-time threat monitoring and analysis • Auto-refresh every 5 minutes
-        </p>
-        <div style={{ marginTop: '12px' }}>
-          <LatestReportLink />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+          <div>
+            <h1>🛡️ SOC Threat Intelligence Dashboard</h1>
+            <p className="header-subtitle" style={{ marginTop: 4 }}>
+              Real-time threat monitoring and analysis • Auto-refresh every 5 minutes
+            </p>
+          </div>
+          <div>
+            <LatestReportLink />
+          </div>
         </div>
         
         {/* Time Range Filter */}
