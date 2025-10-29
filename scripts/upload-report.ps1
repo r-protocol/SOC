@@ -29,12 +29,18 @@ try {
   Write-Info ("Using report: {0} (modified {1})" -f $reportFile.Name, $reportFile.LastWriteTime)
 
   # If the file already has a date in its name, keep it; otherwise suffix with last write date
+  # Prefer keeping the original filename; only append date if none present.
   $datedName = $reportFile.Name
-  if ($datedName -notmatch '\\d{4}-\\d{2}-\\d{2}') {
-    $dateStamp = $reportFile.LastWriteTime.ToString("yyyy-MM-dd")
+  $dateStamp = $reportFile.LastWriteTime.ToString("yyyy-MM-dd")
+  $hasAnyDate = ($datedName -match '\\d{4}-\\d{2}-\\d{2}')
+  $hasExactSuffix = ($datedName -match "_${dateStamp}\\.docx$")
+  if (-not $hasAnyDate) {
     $base = [System.IO.Path]::GetFileNameWithoutExtension($reportFile.Name)
     $ext = [System.IO.Path]::GetExtension($reportFile.Name)
     $datedName = "$base`_$dateStamp$ext"
+  } elseif (-not $hasExactSuffix) {
+    # Do not alter names that already include a date; leave as-is to avoid duplicates
+    $datedName = $reportFile.Name
   }
 
   $datedPath = Join-Path $publicReports $datedName

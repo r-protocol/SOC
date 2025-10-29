@@ -11,7 +11,8 @@ export default function LatestReportLink() {
   const stableUrl = `${base}reports/latest.docx`;
   const [state, setState] = useState({
     url: stableUrl,
-    label: 'Download Latest Report (DOCX)'
+    label: 'Download Latest Report (DOCX)',
+    downloadName: 'Threat_Intelligence_Report.docx'
   });
 
   useEffect(() => {
@@ -24,10 +25,14 @@ export default function LatestReportLink() {
         if (Array.isArray(list) && list.length > 0) {
           const first = list[0];
           const when = first.updated ? new Date(first.updated).toLocaleString() : '';
+          const rawName = first.filename || 'Threat_Intelligence_Report.docx';
+          // Normalize duplicated date patterns like ..._YYYY-MM-DD_YYYY-MM-DD.docx -> ..._YYYY-MM-DD.docx
+          const normalizedName = rawName.replace(/(\d{4}-\d{2}-\d{2})_(\1)(\.docx)$/i, '$1$3');
           // Always point to stable latest.docx to avoid transient 404s if dated file isn't deployed yet
           setState({
             url: stableUrl,
-            label: when ? `Download Latest Report (DOCX) – updated ${when}` : 'Download Latest Report (DOCX)'
+            label: when ? `Download Latest Report (DOCX) – updated ${when}` : 'Download Latest Report (DOCX)',
+            downloadName: normalizedName
           });
         }
       })
@@ -41,7 +46,7 @@ export default function LatestReportLink() {
   return (
     <a
       href={state.url}
-      download
+      download={state.downloadName}
       style={{
         display: 'inline-block',
         padding: '10px 16px',
