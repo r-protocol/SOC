@@ -11,7 +11,7 @@ export default function LatestReportLink() {
   const stableUrl = `${base}reports/latest.docx`;
   const [state, setState] = useState({
     url: stableUrl,
-    label: 'Download Latest Report (DOCX)',
+    label: 'Download Report',
     downloadName: 'Threat_Intelligence_Report.docx'
   });
 
@@ -31,7 +31,8 @@ export default function LatestReportLink() {
           // Always point to stable latest.docx to avoid transient 404s if dated file isn't deployed yet
           setState({
             url: stableUrl,
-            label: when ? `Download Latest Report (DOCX) – updated ${when}` : 'Download Latest Report (DOCX)',
+            // Keep the detailed info as a hover title; visible text stays "Download Report"
+            label: when ? `Updated ${when}` : 'Download Report',
             downloadName: normalizedName
           });
         }
@@ -47,6 +48,7 @@ export default function LatestReportLink() {
     <a
       href={state.url}
       download={state.downloadName}
+      title={state.label}
       style={{
         display: 'inline-block',
         padding: '10px 16px',
@@ -59,7 +61,7 @@ export default function LatestReportLink() {
         whiteSpace: 'nowrap'
       }}
     >
-      📄 {state.label}
+      Download Report
     </a>
   );
 }
