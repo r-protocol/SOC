@@ -961,7 +961,50 @@ def cmd_analyze_unanalyzed():
         return
     
     log_success(f"{len(relevant_articles)} articles are relevant for analysis")
-    
+
+    # Mark the rest as NOT_RELEVANT or SKIPPED (missing content) so they don't linger as UNANALYZED
+    try:
+        original_ids = {a['id'] for a in articles_to_analyze}
+        relevant_ids = {a['id'] for a in relevant_articles}
+        to_mark_ids = list(original_ids - relevant_ids)
+        if to_mark_ids:
+            conn = sqlite3.connect(DATABASE_PATH)
+            cursor = conn.cursor()
+            updated_nr = 0
+            updated_skipped = 0
+            for a in articles_to_analyze:
+                if a['id'] in to_mark_ids:
+                    if not (a.get('content') or '').strip():
+                        # No content available — cannot analyze
+                        cursor.execute(
+                            """
+                            UPDATE articles
+                            SET threat_risk = 'NOT_RELEVANT',
+                                category = 'Not Cybersecurity Related',
+                                summary = COALESCE(summary,'') || CASE WHEN COALESCE(summary,'')='' THEN '' ELSE '\n' END || 'Skipped: no content available; unable to analyze.'
+                            WHERE id = ?
+                            """,
+                            (a['id'],),
+                        )
+                        updated_skipped += 1
+                    else:
+                        cursor.execute(
+                            """
+                            UPDATE articles
+                            SET threat_risk = 'NOT_RELEVANT',
+                                category = 'Not Cybersecurity Related',
+                                summary = COALESCE(summary,'') || CASE WHEN COALESCE(summary,'')='' THEN '' ELSE '\n' END || 'Filtered out - not relevant to cybersecurity.'
+                            WHERE id = ?
+                            """,
+                            (a['id'],),
+                        )
+                        updated_nr += 1
+            conn.commit()
+            conn.close()
+            log_info(f"Marked {updated_nr} as NOT_RELEVANT (irrelevant) and {updated_skipped} as NOT_RELEVANT (missing content)")
+    except Exception as e:
+        log_warn(f"Failed to mark non-relevant/empty-content articles: {e}")
+
     # Step 3: Analyze with LLM
     log_step(3, "Analyzing Articles with LLM")
     analyzed_articles = (analyze_articles_parallel(relevant_articles)

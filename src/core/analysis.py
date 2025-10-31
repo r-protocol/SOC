@@ -262,74 +262,72 @@ RESPOND WITH JSON ONLY:"""
     return None, None
 
 def analyze_articles_sequential(articles):
+    """Analyze articles one-by-one while rendering a single persistent progress bar line.
+
+    Matches the progress rendering pattern used in other phases (e.g., fetcher):
+    - Clear the current line, optionally print a status message above
+    - Redraw a single progress bar on one line without leaving duplicates
+    """
     analyzed_articles = []
     total_articles = len(articles)
     processed_articles = 0
     progress_bar_width = 50
-    last_line = ""
-    status_messages = []
-    
-    def update_progress(current, total, phase_desc):
-        nonlocal last_line
-        
-        # Create the progress bar
+
+    def print_progress(current, total, phase_desc="Analyzing Articles", msg=None):
+        # Clear the current line completely (like other phases)
+        sys.stdout.write('\r\033[K')
+        if msg:
+            # Print the status message on its own line, above the bar
+            print(msg)
         percent = int((current / total) * 100) if total else 100
         filled_length = int(progress_bar_width * percent // 100)
         bar = '█' * filled_length + '-' * (progress_bar_width - filled_length)
-        progress = f"{phase_desc} |{bar}| {percent}% ({current}/{total})"
-        
-        # Clear previous progress bar line
-        if last_line:
-            sys.stdout.write('\r' + ' ' * len(last_line) + '\r')
-            sys.stdout.flush()
-        
-        # Print progress bar
-        sys.stdout.write(progress)
+        sys.stdout.write(f"{phase_desc} |{bar}| {percent}% ({current}/{total})")
         sys.stdout.flush()
-        last_line = progress
-    
-    def handle_message(msg):
-        """Callback to handle retry/status messages"""
-        nonlocal last_line
-        # Clear current progress bar
-        if last_line:
-            sys.stdout.write('\r' + ' ' * len(last_line) + '\r')
-            sys.stdout.flush()
-        # Print the message
-        print(msg)
-        # Redraw the progress bar
-        update_progress(processed_articles, total_articles, "Analyzing Articles")
 
-    update_progress(0, total_articles, "Analyzing Articles")
-    
+    # Initial bar
+    if total_articles:
+        print_progress(0, total_articles)
+
+    # Callback used only for retries/warnings during LLM calls
+    def handle_retry_message(msg):
+        print_progress(processed_articles, total_articles, msg=msg)
+
     for article in articles:
-        llm_analysis, _ = analyze_article_with_llm(article, retry_callback=handle_message)
+        llm_analysis, _ = analyze_article_with_llm(article, retry_callback=handle_retry_message)
+        processed_articles += 1
+
         if llm_analysis:
             article.update(llm_analysis)
             analyzed_articles.append(article)
-            # Print success message
+            # Success message rendered above the single progress bar
             success_msg = f"{BColors.OKGREEN}[ANALYZED]{BColors.ENDC} {article['title']} (Risk: {article.get('threat_risk')})"
-            handle_message(success_msg)
-        
-        processed_articles += 1
-        update_progress(processed_articles, total_articles, "Analyzing Articles")
-    
-    sys.stdout.write('\n')  # End progress bar line
+            print_progress(processed_articles, total_articles, msg=success_msg)
+        else:
+            # No analysis returned; just advance the bar
+            print_progress(processed_articles, total_articles)
+
+    # End the progress bar line cleanly
+    sys.stdout.write('\n')
     sys.stdout.flush()
     return analyzed_articles
 
 def analyze_articles_parallel(articles, max_workers=None):
-    """Parallel article analysis using threads; maintains per-phase ordering semantics for DB/storage later."""
+    """Parallel article analysis using threads and a single persistent progress bar line."""
     analyzed_articles = []
     total = len(articles)
     processed = 0
     progress_bar_width = 50
 
-    def print_progress(current):
+    def print_progress(current, msg=None):
+        # Clear the current line and optionally print a status message above
+        sys.stdout.write('\r\033[K')
+        if msg:
+            print(msg)
         percent = int((current / total) * 100) if total else 100
         filled_length = int(progress_bar_width * percent // 100)
         bar = '█' * filled_length + '-' * (progress_bar_width - filled_length)
-        sys.stdout.write(f"\rAnalyzing Articles |{bar}| {percent}% ({current}/{total})")
+        sys.stdout.write(f"Analyzing Articles |{bar}| {percent}% ({current}/{total})")
         sys.stdout.flush()
 
     print_progress(0)
@@ -343,12 +341,14 @@ def analyze_articles_parallel(articles, max_workers=None):
                 llm_analysis, _ = future.result()
             except Exception:
                 llm_analysis = None
+            processed += 1
             if llm_analysis:
                 article.update(llm_analysis)
                 analyzed_articles.append(article)
-                sys.stdout.write(f"\n{BColors.OKGREEN}[ANALYZED]{BColors.ENDC} {article['title']} (Risk: {article.get('threat_risk')})\n")
-            processed += 1
-            print_progress(processed)
+                success_msg = f"{BColors.OKGREEN}[ANALYZED]{BColors.ENDC} {article['title']} (Risk: {article.get('threat_risk')})"
+                print_progress(processed, msg=success_msg)
+            else:
+                print_progress(processed)
 
     sys.stdout.write('\n')
     sys.stdout.flush()
