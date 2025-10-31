@@ -6,13 +6,20 @@ function PipelineOverview({ timeRange }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [allThreats, setAllThreats] = useState([]);
+  const [totals, setTotals] = useState(null); // Holds overall totals from pipeline-overview in prod
 
   // Load all data once for production mode
   useEffect(() => {
     if (import.meta.env.PROD) {
-      api.getRecentThreats({})
-        .then(threats => {
-          setAllThreats(threats);
+      // In production (static hosting), load both recent threats (for filtering)
+      // and pipeline overview (for stable totals) to mirror backend semantics
+      Promise.all([
+        api.getRecentThreats({}),
+        api.getPipelineOverview({})
+      ])
+        .then(([threats, overview]) => {
+          setAllThreats(threats || []);
+          setTotals(overview || null);
           setLoading(false);
         })
         .catch(err => {
@@ -46,17 +53,18 @@ function PipelineOverview({ timeRange }) {
     if (import.meta.env.PROD && allThreats.length > 0) {
       const filtered = filterByTimeRange(allThreats, timeRange);
       
+      // Use totals from pipeline-overview when available to match backend behavior
       const stats = {
         critical_threats: filtered.filter(t => t.risk_level === 'HIGH').length,
-        articles_processed: allThreats.length, // Total in database
-        total_iocs: filtered.reduce((sum, t) => sum + (t.ioc_count || 0), 0),
-        total_kql: filtered.reduce((sum, t) => sum + (t.kql_count || 0), 0),
+        articles_processed: totals?.articles_processed ?? allThreats.length,
+        total_iocs: totals?.total_iocs ?? filtered.reduce((sum, t) => sum + (t.ioc_count || 0), 0),
+        total_kql: totals?.total_kql ?? filtered.reduce((sum, t) => sum + (t.kql_count || 0), 0),
         filtered_items: filtered.length
       };
       
       setData(stats);
     }
-  }, [timeRange, allThreats]);
+  }, [timeRange, allThreats, totals]);
 
   if (loading) return <div className="card loading">Loading...</div>;
   if (!data) return null;
