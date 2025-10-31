@@ -166,8 +166,29 @@ def is_article_relevant_keywords(article):
     """Fallback keyword-based filtering when LLM is unavailable"""
     title_lower = article['title'].lower()
     content_lower = article.get('content', '').lower()[:3000]  # Check first 3000 chars
+    # Try to include domain context for vendor-aware rules
+    try:
+        from urllib.parse import urlparse
+        domain = urlparse(article.get('url') or '').netloc.lower()
+    except Exception:
+        domain = ''
     combined = title_lower + " " + content_lower
     
+    # Vendor marketing posts: allow through as 'relevant' so they get analyzed and will likely
+    # be classified as INFORMATIONAL by the analyzer. This ensures vendor updates don't linger
+    # as UNANALYZED/NOT_RELEVANT.
+    vendor_domains = [
+        'crowdstrike.com', 'microsoft.com', 'security.microsoft.com', 'sophos.com', 'paloaltonetworks.com',
+        'unit42.paloaltonetworks.com', 'fortinet.com', 'fortiguard.com', 'checkpoint.com', 'talosintelligence.com',
+        'mandiant.com', 'proofpoint.com', 'googleprojectzero.blogspot.com', 'blog.google', 'cloud.google.com'
+    ]
+    marketing_title_terms = [
+        'se labs', 'leader', 'leaders', 'award', 'awarded', 'recognition', 'scores', 'score', 'frost radar',
+        'benchmark', 'evaluation', 'tested', 'wins', 'winner', 'named leader', 'magic quadrant'
+    ]
+    if any(d in domain for d in vendor_domains) and any(t in title_lower for t in marketing_title_terms):
+        return True
+
     # First check for negative keywords in title (shopping/consumer content)
     negative_keywords_in_title = [
         'black friday', 'gift guide', 'best deals', 'price drop', 'walmart',
